@@ -29,11 +29,12 @@ notched into their outlines, so each label and input reads as one control.
   fades
 - **Settings** for the Discord Application ID, auto-update, and close-to-tray
   behavior
-- Glowing **moon/sun** header toggle for dark and light appearance, with a
-  soft pulse when switched
-- Header controls shaped like Discord's connection status: labelled pills for
-  the moon/sun, the changelog and settings, lined up beside the status chip
-- Emoji glyphs inside the header pills and the four activity-type chips
+- **Dark/Light** header pill for appearance, with a soft accent flash when
+  switched
+- Header controls shaped like Discord's connection status: flat, borderless
+  pills for appearance, the changelog and settings, lined up beside the status
+  chip
+- Emoji glyphs on the four activity-type chips
 - **Changelog** board in the header, with a Discord-style count badge for
   unseen releases
 - **Beta** features in their own Settings section, each with a BETA badge:
@@ -86,13 +87,14 @@ like the real popout. Discord itself never shows the buttons on your own card.
 
 ## Appearance
 
-A glowing **moon** in the header means dark mode (`#1e2124` surface, `#7289da`
-accent, white text); a glowing **sun** means light mode. Click the icon to
-switch instantly, with a soft bloom after each switch, and the choice is saved
-in the portable settings file. The appearance controls are kept in the header,
-separate from the editor settings. **Reduce motion** skips the bloom.
+The header pill reads **Dark** in dark mode (`#1e2124` surface, `#7289da`
+accent, white text) and **Light** in light mode. Click it to switch instantly;
+the pill picks up the accent colour and settles back to its resting tint. The
+choice is saved in the portable settings file. The appearance control is kept in
+the header, separate from the editor settings. **Reduce motion** skips the
+flash.
 
-![Light appearance with the glowing sun](assets/light.png)
+![Light appearance with the Light pill in the header](assets/light.png)
 
 ## Beta features
 
@@ -103,10 +105,10 @@ switch them on.
 
 ![Beta features in Settings](assets/beta.png)
 
-- **Performance mode** drops the blur behind every card, the glow behind the
-  update button and the halo of the moon/sun, batches the live preview into one
-  redraw per frame instead of one per edit, skips preview work while the window
-  is hidden, and shortens the auto-update pause from 0.7 s to 0.25 s. In a
+- **Performance mode** drops the blur behind every card and the glow behind the
+  update button, batches the live preview into one redraw per frame instead of
+  one per edit, skips preview work while the window is hidden, and shortens the
+  auto-update pause from 0.7 s to 0.25 s. In a
   scripted test on this machine (150 edits into the Details field, twice per
   mode) the round trip dropped from ~965 ms to ~740 ms, and the process used
   about 35% less CPU per edit: 1109 and 1234 ms without it, 797 and 750 ms
@@ -158,7 +160,7 @@ as soon as you pick them.
 Every choice is remembered in the portable settings file and applied on the
 next launch, including the welcome screen. The version line at the bottom of
 the dialog identifies the installed build; the date after **Built** is stamped
-into the exe by `build.ps1` at compile time. This release is **1.2.0**.
+into the exe by `build.ps1` at compile time. This release is **1.2.1**.
 
 ![Settings dialog](assets/settings.png)
 
@@ -265,9 +267,9 @@ every release.
   all of these and shows the editor immediately.
 - This is an unsigned local build. Windows SmartScreen may show a warning; use
   **More info → Run anyway** if you trust the file.
-- The four soft card shadows, the glow behind **Update presence** and the
-  moon/sun halo are WPF blur effects. **Performance mode** turns all of them
-  off; that is where most of its responsiveness gain comes from.
+- The four soft card shadows and the glow behind **Update presence** are WPF
+  blur effects. **Performance mode** turns them off; that is where most of its
+  responsiveness gain comes from.
 - The summon hotkey needs a free **Ctrl+Alt+D**. Windows reports a conflict
   when another program already registered it, and the app then shows a note
   and leaves the hotkey off.

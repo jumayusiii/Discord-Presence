@@ -51,6 +51,7 @@ namespace DiscordPresence
         private Button _deletePresetButton;
         private Grid _modalLayer;
         private Border _modalCard;
+        private ScrollViewer _modalScroll;
         private IInputElement _previousFocus;
         private string _activePresetName = string.Empty;
         private Grid _bootLayer;
@@ -69,10 +70,6 @@ namespace DiscordPresence
         private Border _changelogBadge;
         private TextBlock _changelogBadgeText;
         private Button _appearanceButton;
-        private TextBlock _appearanceGlyph;
-        private Ellipse _appearanceHalo;
-        private ScaleTransform _appearanceHaloScale;
-        private DropShadowEffect _appearanceGlow;
         private DispatcherTimer _reconnectTimer;
         private DispatcherTimer _minimizeTimer;
         private DispatcherTimer _autoUpdateTimer;
@@ -371,10 +368,6 @@ namespace DiscordPresence
             };
             AutomationProperties.SetName(statusChip, "Discord connection status");
 
-            Grid changelogContent = new Grid { Width = 20, Height = 20 };
-            TextBlock changelogGlyph = Theme.Emoji("\uD83D\uDCDD", 14.5);
-            changelogContent.Children.Add(changelogGlyph);
-
             _changelogBadgeText = Theme.Text("0", 9, FontWeights.Bold, Brushes.White);
             _changelogBadgeText.HorizontalAlignment = HorizontalAlignment.Center;
             _changelogBadgeText.VerticalAlignment = VerticalAlignment.Center;
@@ -382,57 +375,31 @@ namespace DiscordPresence
 
             _changelogBadge = new Border
             {
-                MinWidth = 15,
-                Height = 15,
+                MinWidth = 16,
+                Height = 16,
                 CornerRadius = new CornerRadius(8),
                 Background = Theme.Danger,
-                BorderBrush = Theme.Surface,
-                BorderThickness = new Thickness(2),
-                Padding = new Thickness(3, 0, 3, 0),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
+                Padding = new Thickness(5, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 Visibility = Visibility.Collapsed,
                 IsHitTestVisible = false,
                 Child = _changelogBadgeText
             };
-            changelogContent.Children.Add(_changelogBadge);
 
-            Grid appearanceContent = new Grid { Width = 20, Height = 20 };
-            _appearanceHaloScale = new ScaleTransform(1, 1);
-            _appearanceHalo = new Ellipse
-            {
-                Width = 24,
-                Height = 24,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                RenderTransform = _appearanceHaloScale,
-                IsHitTestVisible = false
-            };
-            appearanceContent.Children.Add(_appearanceHalo);
-
-            _appearanceGlyph = Theme.Emoji("\uD83C\uDF19", 14.5);
-            _appearanceGlow = new DropShadowEffect
-            {
-                ShadowDepth = 0,
-                BlurRadius = 8,
-                RenderingBias = RenderingBias.Performance
-            };
-            Theme.Elevate(_appearanceGlyph, _appearanceGlow);
-            appearanceContent.Children.Add(_appearanceGlyph);
-
-            // Every header control is a Discord-style status pill: surface,
-            // outline, glyph and label, exactly like the connection chip.
-            _appearanceButton = Theme.Pill(appearanceContent, "Dark", "Appearance", out _appearanceLabel);
+            // Every header control is a Discord-style status pill: a flat
+            // rounded surface with a short label, like the connection chip. The
+            // unseen-release count rides inside the Changelog pill.
+            _appearanceButton = Theme.Pill("Dark", "Appearance", out _appearanceLabel);
             _appearanceButton.Click += delegate { SetLightMode(!_settings.LightMode); };
             RefreshAppearanceButton();
 
-            Button changelogButton = Theme.Pill(changelogContent, "Changelog",
-                "Release notes and recent changes");
+            TextBlock changelogLabel;
+            Button changelogButton = Theme.Pill("Changelog",
+                "Release notes and recent changes", out changelogLabel, null, _changelogBadge);
             AutomationProperties.SetHelpText(changelogButton, "Release notes and recent changes");
             changelogButton.Click += delegate { ShowChangelogDialog(); };
 
-            Button settingsButton = Theme.Pill(Theme.Emoji("\u2699\uFE0F", 14.5), "Settings",
+            Button settingsButton = Theme.Pill("Settings",
                 "Application ID, publishing, tray options and beta features");
             settingsButton.Click += delegate { ShowSettingsDialog(); };
 
@@ -1261,98 +1228,59 @@ namespace DiscordPresence
 
         private void RefreshAppearanceButton()
         {
-            if (_appearanceButton == null || _appearanceGlyph == null || _appearanceGlow == null)
+            if (_appearanceButton == null)
             {
                 return;
             }
 
             bool light = _settings.LightMode;
-            _appearanceGlyph.Text = light ? "\u2600\uFE0F" : "\uD83C\uDF19";
-            _appearanceGlyph.Foreground = new SolidColorBrush(light
-                ? Color.FromRgb(0xE0, 0x92, 0x00)
-                : Color.FromRgb(0xDE, 0xE5, 0xFF));
-
-            Color glow = light ? Color.FromRgb(0xFF, 0xB3, 0x00) : Theme.AccentColor;
-            _appearanceGlow.Color = glow;
-            _appearanceGlow.Opacity = 0.95;
-            _appearanceHalo.Fill = BuildGlowHalo(glow, light ? (byte)0x52 : (byte)0x68);
-
+            string mode = light ? "Light" : "Dark";
             if (_appearanceLabel != null)
             {
-                _appearanceLabel.Text = light ? "Light" : "Dark";
+                _appearanceLabel.Text = mode;
             }
 
             string action = light ? "Switch to dark mode" : "Switch to light mode";
             _appearanceButton.ToolTip = action;
+            AutomationProperties.SetName(_appearanceButton, mode);
             AutomationProperties.SetHelpText(_appearanceButton, action);
         }
 
         /// <summary>
-        /// A soft bloom after the moon/sun changes. The halo expands a little
-        /// and brightens, then settles back to its resting glow.
+        /// A soft accent flash after the appearance pill switches modes: the
+        /// surface picks up the accent colour and settles back to its resting
+        /// tint. Skipped when Reduce motion is on.
         /// </summary>
         private void PlayAppearancePulse()
         {
-            if (_settings.ReduceMotion || _appearanceHalo == null || _appearanceHaloScale == null)
+            if (_settings.ReduceMotion || _appearanceButton == null)
             {
                 return;
             }
 
-            _appearanceHalo.BeginAnimation(UIElement.OpacityProperty, null);
-            _appearanceHalo.Opacity = 1;
+            Color accent = Theme.AccentColor;
+            Color burst = Color.FromArgb(0x54, accent.R, accent.G, accent.B);
+            Color resting = Theme.HoverOverlay.Color;
 
-            DoubleAnimationUsingKeyFrames glow = new DoubleAnimationUsingKeyFrames();
-            glow.KeyFrames.Add(new EasingDoubleKeyFrame(
-                0.55, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            glow.KeyFrames.Add(new EasingDoubleKeyFrame(
-                1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)))
+            SolidColorBrush flash = new SolidColorBrush(burst);
+            _appearanceButton.Background = flash;
+
+            ColorAnimation settle = new ColorAnimation
             {
+                From = burst,
+                To = resting,
+                Duration = TimeSpan.FromMilliseconds(420),
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-            glow.KeyFrames.Add(new EasingDoubleKeyFrame(
-                1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420))));
-            _appearanceHalo.BeginAnimation(UIElement.OpacityProperty, glow);
-
-            _appearanceHaloScale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            _appearanceHaloScale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            _appearanceHaloScale.ScaleX = 1;
-            _appearanceHaloScale.ScaleY = 1;
-            _appearanceHaloScale.BeginAnimation(ScaleTransform.ScaleXProperty, BuildPulseScale());
-            _appearanceHaloScale.BeginAnimation(ScaleTransform.ScaleYProperty, BuildPulseScale());
-        }
-
-        private static DoubleAnimationUsingKeyFrames BuildPulseScale()
-        {
-            DoubleAnimationUsingKeyFrames pulse = new DoubleAnimationUsingKeyFrames();
-            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(
-                0.88, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(
-                1.14, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(160)))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            });
-            pulse.KeyFrames.Add(new EasingDoubleKeyFrame(
-                1.0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(420)))
-            {
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
-            });
-            return pulse;
-        }
-
-        private static RadialGradientBrush BuildGlowHalo(Color color, byte alpha)
-        {
-            RadialGradientBrush halo = new RadialGradientBrush
-            {
-                Center = new Point(0.5, 0.5),
-                GradientOrigin = new Point(0.5, 0.5)
             };
-            halo.GradientStops.Add(new GradientStop(
-                Color.FromArgb(alpha, color.R, color.G, color.B), 0.0));
-            halo.GradientStops.Add(new GradientStop(
-                Color.FromArgb((byte)(alpha / 3), color.R, color.G, color.B), 0.62));
-            halo.GradientStops.Add(new GradientStop(
-                Color.FromArgb(0, color.R, color.G, color.B), 1.0));
-            return halo;
+            settle.Completed += delegate
+            {
+                // Hand the surface back to the palette so it follows the theme.
+                if (ReferenceEquals(_appearanceButton.Background, flash))
+                {
+                    _appearanceButton.ClearValue(Control.BackgroundProperty);
+                }
+            };
+            flash.BeginAnimation(SolidColorBrush.ColorProperty, settle);
         }
 
         private void ShowChangelogDialog()
@@ -1402,7 +1330,18 @@ namespace DiscordPresence
             Dispatcher.BeginInvoke(new Action(delegate
             {
                 done.Focus();
+                // Focusing the default button scrolls it into view, and this
+                // board should still open on its newest entry.
+                Dispatcher.BeginInvoke(new Action(ScrollModalToTop), DispatcherPriority.Loaded);
             }), DispatcherPriority.Input);
+        }
+
+        private void ScrollModalToTop()
+        {
+            if (_modalScroll != null)
+            {
+                _modalScroll.ScrollToTop();
+            }
         }
 
         private Border BuildChangelogEntry(ChangelogEntry entry, bool latest)
@@ -2138,16 +2077,20 @@ namespace DiscordPresence
             }
 
             _previousFocus = Keyboard.FocusedElement;
-            // Taller dialogs stay usable when the window is resized short.
-            _modalCard.Child = new ScrollViewer
+            // Taller dialogs stay usable when the window is resized short, and
+            // they never grow past the window: the card frames them with 20px
+            // of padding and the window keeps its title bar and footer.
+            ScrollViewer scroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Focusable = false,
                 PanningMode = PanningMode.VerticalOnly,
-                MaxHeight = Math.Max(320, ActualHeight - 40),
+                MaxHeight = Math.Max(320, ActualHeight - 120),
                 Content = content
             };
+            _modalScroll = scroll;
+            _modalCard.Child = scroll;
             if (_updateButton != null)
             {
                 _updateButton.IsDefault = false;
@@ -2177,6 +2120,7 @@ namespace DiscordPresence
             _modalLayer.BeginAnimation(UIElement.OpacityProperty, null);
             _modalLayer.Opacity = 1;
             _modalCard.Child = null;
+            _modalScroll = null;
             if (_updateButton != null)
             {
                 _updateButton.IsDefault = true;

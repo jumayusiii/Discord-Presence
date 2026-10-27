@@ -131,8 +131,8 @@ namespace DiscordPresence
 
   <Style x:Key=""PillButton"" TargetType=""Button"" BasedOn=""{StaticResource BaseButton}"">
     <Setter Property=""Background"" Value=""{DynamicResource ChipFillBrush}""/>
-    <Setter Property=""BorderBrush"" Value=""{DynamicResource ChipBorderBrush}""/>
-    <Setter Property=""BorderThickness"" Value=""1""/>
+    <Setter Property=""BorderBrush"" Value=""Transparent""/>
+    <Setter Property=""BorderThickness"" Value=""0""/>
     <Setter Property=""Foreground"" Value=""{DynamicResource TextSecondaryBrush}""/>
     <Setter Property=""Template"">
       <Setter.Value>
@@ -147,11 +147,12 @@ namespace DiscordPresence
                                 RecognizesAccessKey=""True""/>
               <Border x:Name=""Hover"" Background=""{DynamicResource HoverOverlayBrush}"" CornerRadius=""14""
                       Opacity=""0"" IsHitTestVisible=""False""/>
+              <Border x:Name=""Focus"" BorderBrush=""#7289DA"" BorderThickness=""1"" CornerRadius=""14""
+                      Opacity=""0"" IsHitTestVisible=""False""/>
             </Grid>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property=""IsMouseOver"" Value=""True"">
-              <Setter TargetName=""Bd"" Property=""BorderBrush"" Value=""{DynamicResource HoverBorderBrush}""/>
               <Setter TargetName=""Hover"" Property=""Opacity"" Value=""1""/>
             </Trigger>
             <Trigger Property=""IsPressed"" Value=""True"">
@@ -159,7 +160,7 @@ namespace DiscordPresence
               <Setter TargetName=""Hover"" Property=""Opacity"" Value=""1""/>
             </Trigger>
             <Trigger Property=""IsKeyboardFocused"" Value=""True"">
-              <Setter TargetName=""Bd"" Property=""BorderBrush"" Value=""#7289DA""/>
+              <Setter TargetName=""Focus"" Property=""Opacity"" Value=""1""/>
             </Trigger>
             <Trigger Property=""IsEnabled"" Value=""False"">
               <Setter Property=""Opacity"" Value=""0.45""/>
@@ -483,42 +484,57 @@ namespace DiscordPresence
         }
 
         /// <summary>
-        /// A header control shaped like Discord's connection status: a rounded
-        /// surface holding an emoji and a short label.
+        /// A header control shaped like Discord's connection status: a flat
+        /// rounded surface holding a short label, with room for one leading or
+        /// trailing element such as the unseen-release count.
         /// </summary>
-        public static Button Pill(UIElement glyph, string label, string tooltip, out TextBlock labelText)
+        public static Button Pill(string label, string tooltip, out TextBlock labelText,
+            UIElement leading = null, UIElement trailing = null)
         {
             StackPanel row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            if (glyph != null)
+            FrameworkElement first = leading as FrameworkElement;
+            if (first != null)
             {
-                row.Children.Add(glyph);
+                first.Margin = new Thickness(0, 0, 6, 0);
+                row.Children.Add(first);
             }
-            labelText = Text(label, 11.5, FontWeights.SemiBold, TextSecondary);
-            labelText.Margin = new Thickness(6, 0, 0, 0);
-            row.Children.Add(labelText);
+            TextBlock text = Text(label, 11.5, FontWeights.SemiBold, TextSecondary);
+            row.Children.Add(text);
+            FrameworkElement last = trailing as FrameworkElement;
+            if (last != null)
+            {
+                last.Margin = new Thickness(7, 0, 0, 0);
+                row.Children.Add(last);
+            }
 
             Button button = new Button
             {
                 Style = FindStyle("PillButton"),
                 Content = row,
                 Height = 28,
-                Padding = new Thickness(11, 0, 12, 0),
+                Padding = new Thickness(12, 0, 12, 0),
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = tooltip
             };
             AutomationProperties.SetName(button, label);
+
+            // The label keeps a palette brush so it tracks the theme, and the
+            // pill brightens it under the pointer.
+            button.MouseEnter += delegate { text.Foreground = TextPrimary; };
+            button.MouseLeave += delegate { text.Foreground = TextSecondary; };
+            labelText = text;
             return button;
         }
 
-        public static Button Pill(UIElement glyph, string label, string tooltip)
+        public static Button Pill(string label, string tooltip)
         {
             TextBlock ignored;
-            return Pill(glyph, label, tooltip, out ignored);
+            return Pill(label, tooltip, out ignored);
         }
 
         public static StackPanel VStack(double gap, params UIElement[] children)

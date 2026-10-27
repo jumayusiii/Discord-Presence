@@ -25,6 +25,11 @@ namespace DiscordPresence
     {
         public static readonly ChangelogEntry[] Entries = new[]
         {
+            new ChangelogEntry("1.2.1", "October 27, 2026",
+                "The header buttons dropped their emoji: Changelog, Dark/Light and Settings are now flat, minimal pills.",
+                "The unseen-release count now sits inside the Changelog pill, right after its label.",
+                "Switching appearance flashes the pill with the accent colour instead of glowing a moon or sun.",
+                "The Changelog board now fits inside the window and opens on its newest entry."),
             new ChangelogEntry("1.2.0", "October 27, 2026",
                 "Beta: Performance mode \u2014 flat surfaces instead of blur effects, preview redraws batched to a single frame, and auto-updates three times sooner.",
                 "Beta: Elapsed timer \u2014 Discord counts how long the presence has been up, with a Restart timer action.",

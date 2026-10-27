@@ -114,11 +114,22 @@ namespace DiscordPresence
         public List<PresencePreset> Presets { get; set; }
         public bool MinimizeToTray { get; set; }
         public bool LightMode { get; set; }
+        public bool CustomTheme { get; set; }
+        public string ThemeSurface { get; set; }
+        public string ThemeAccent { get; set; }
+        public string ThemeText { get; set; }
         public bool AutoUpdate { get; set; }
         public bool ReduceMotion { get; set; }
         public bool PerformanceMode { get; set; }
         public bool ShowElapsed { get; set; }
         public bool SummonHotkey { get; set; }
+        public bool IdlePause { get; set; }
+        public bool RememberWindow { get; set; }
+        public bool StartWithWindows { get; set; }
+        public double WindowLeft { get; set; }
+        public double WindowTop { get; set; }
+        public double WindowWidth { get; set; }
+        public double WindowHeight { get; set; }
         public long ElapsedStart { get; set; }
         public string LastSeenChangelog { get; set; }
 
@@ -138,6 +149,9 @@ namespace DiscordPresence
             Button2Label = string.Empty;
             Button2Url = string.Empty;
             LastSeenChangelog = string.Empty;
+            ThemeSurface = string.Empty;
+            ThemeAccent = string.Empty;
+            ThemeText = string.Empty;
             Presets = new List<PresencePreset>();
         }
 
@@ -161,11 +175,22 @@ namespace DiscordPresence
                 Button2Url = Button2Url,
                 MinimizeToTray = MinimizeToTray,
                 LightMode = LightMode,
+                CustomTheme = CustomTheme,
+                ThemeSurface = ThemeSurface,
+                ThemeAccent = ThemeAccent,
+                ThemeText = ThemeText,
                 AutoUpdate = AutoUpdate,
                 ReduceMotion = ReduceMotion,
                 PerformanceMode = PerformanceMode,
                 ShowElapsed = ShowElapsed,
                 SummonHotkey = SummonHotkey,
+                IdlePause = IdlePause,
+                RememberWindow = RememberWindow,
+                StartWithWindows = StartWithWindows,
+                WindowLeft = WindowLeft,
+                WindowTop = WindowTop,
+                WindowWidth = WindowWidth,
+                WindowHeight = WindowHeight,
                 ElapsedStart = ElapsedStart,
                 LastSeenChangelog = LastSeenChangelog
             };
@@ -195,6 +220,43 @@ namespace DiscordPresence
             if (ElapsedStart < 0)
             {
                 ElapsedStart = 0;
+            }
+
+            // The three custom colours are either all usable or all dropped, so
+            // a half-written set can never mix one custom tone with two stock
+            // ones, and an empty set reads as "never customised".
+            ThemeSurface = NormalizeColor(ThemeSurface);
+            ThemeAccent = NormalizeColor(ThemeAccent);
+            ThemeText = NormalizeColor(ThemeText);
+            if (string.IsNullOrEmpty(ThemeSurface) || string.IsNullOrEmpty(ThemeAccent) ||
+                string.IsNullOrEmpty(ThemeText))
+            {
+                ThemeSurface = string.Empty;
+                ThemeAccent = string.Empty;
+                ThemeText = string.Empty;
+                CustomTheme = false;
+            }
+
+            // Zero means "no saved geometry", so an unset or nonsense box
+            // never places the window somewhere the user cannot reach it.
+            if (WindowWidth < 320 || WindowWidth > 20000 || double.IsNaN(WindowWidth))
+            {
+                WindowWidth = 0;
+            }
+            if (WindowHeight < 240 || WindowHeight > 20000 || double.IsNaN(WindowHeight))
+            {
+                WindowHeight = 0;
+            }
+            if (double.IsNaN(WindowLeft) || double.IsNaN(WindowTop) ||
+                Math.Abs(WindowLeft) > 100000 || Math.Abs(WindowTop) > 100000)
+            {
+                WindowLeft = 0;
+                WindowTop = 0;
+            }
+            if (WindowWidth == 0 || WindowHeight == 0)
+            {
+                WindowLeft = 0;
+                WindowTop = 0;
             }
             if (ActivityType < 0 || ActivityType > 3)
             {
@@ -235,6 +297,30 @@ namespace DiscordPresence
             value = value.Trim();
             return value.Length > max ? value.Substring(0, max) : value;
         }
+
+        /// <summary>Keeps a #RRGGBB colour and drops anything the picker cannot use.</summary>
+        private static string NormalizeColor(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+            string text = value.Trim().TrimStart('#').ToUpperInvariant();
+            if (text.Length != 6)
+            {
+                return string.Empty;
+            }
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                bool hex = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F');
+                if (!hex)
+                {
+                    return string.Empty;
+                }
+            }
+            return "#" + text;
+        }
     }
 
     /// <summary>
@@ -260,6 +346,19 @@ namespace DiscordPresence
                     "DiscordPresence");
                 return Path.Combine(dir, "discord-presence.json");
             }
+        }
+
+        /// <summary>
+        /// The file the app is really reading: the portable one when it exists,
+        /// otherwise the fallback that the next save would write to.
+        /// </summary>
+        public static string ActivePath()
+        {
+            if (File.Exists(FallbackPath) && !File.Exists(PortablePath))
+            {
+                return FallbackPath;
+            }
+            return PortablePath;
         }
 
         public static AppSettings Load()

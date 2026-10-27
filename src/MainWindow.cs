@@ -52,6 +52,9 @@ namespace DiscordPresence
         private Grid _modalLayer;
         private Border _modalCard;
         private ScrollViewer _modalScroll;
+        private NavItem[] _settingsNav;
+        private StackPanel[] _settingsPanes;
+        private ScrollViewer _settingsPaneScroll;
         private IInputElement _previousFocus;
         private string _activePresetName = string.Empty;
         private Grid _bootLayer;
@@ -69,7 +72,12 @@ namespace DiscordPresence
         private System.Windows.Shapes.Ellipse _statusDot;
         private Border _changelogBadge;
         private TextBlock _changelogBadgeText;
-        private Button _appearanceButton;
+        private OptionTile _darkTile;
+        private OptionTile _lightTile;
+        private ToggleRow _customThemeRow;
+        private ThemeColorPicker _picker;
+        private DispatcherTimer _themeSaveTimer;
+        private readonly List<AccentGlow> _accentGlows = new List<AccentGlow>();
         private DispatcherTimer _reconnectTimer;
         private DispatcherTimer _minimizeTimer;
         private DispatcherTimer _autoUpdateTimer;
@@ -78,8 +86,16 @@ namespace DiscordPresence
         private ToggleRow _performanceRow;
         private ToggleRow _elapsedRow;
         private ToggleRow _hotkeyRow;
+        private ToggleRow _idleRow;
+        private ToggleRow _rememberRow;
+        private ToggleRow _startupRow;
         private Button _restartTimerButton;
-        private TextBlock _appearanceLabel;
+        private TextBlock _aboutDiscord;
+        private TextBlock _aboutPresence;
+        private TextBlock _aboutAppId;
+        private TextBlock _aboutPresets;
+        private DispatcherTimer _idleTimer;
+        private bool _idlePaused;
         private bool _previewDirty;
         private bool _hotkeyRegistered;
         private WindowChrome _savedChrome;
@@ -103,6 +119,9 @@ namespace DiscordPresence
         private const int PreviewSettleDelay = 120;
         private const int WmHotkey = 0x0312;
         private const int SummonHotkeyId = 0x4D50;
+        private const double SettingsPaneHeight = 360;
+        private const int IdleCheckSeconds = 5;
+        private const int IdlePauseAfterMs = 5 * 60 * 1000;
         private const int HotkeyModifiers = 0x0001 | 0x0002 | 0x4000; // Alt + Ctrl + NoRepeat
         private const int HotkeyVirtualKey = 0x44; // D
         private static readonly bool UsesDwmCorners = Environment.OSVersion.Version.Build >= 22000;
@@ -122,7 +141,7 @@ namespace DiscordPresence
         {
             _settings = SettingsStore.Load();
             _presets = _settings.Presets ?? new List<PresencePreset>();
-            Theme.Apply(_settings.LightMode ? Theme.Appearance.Light : Theme.Appearance.Dark);
+            ApplyStoredTheme();
             // The cards and buttons below ask the theme for their shadows, so
             // the performance profile has to be in place before they exist.
             Theme.SetPerformanceMode(_settings.PerformanceMode);
@@ -146,6 +165,7 @@ namespace DiscordPresence
             Rect work = SystemParameters.WorkArea;
             Width = Math.Min(Width, Math.Max(MinWidth, work.Width - 40));
             Height = Math.Min(Height, Math.Max(MinHeight, work.Height - 40));
+            ApplySavedGeometry(work);
 
             WindowChrome chrome = new WindowChrome
             {
@@ -183,6 +203,21 @@ namespace DiscordPresence
 
             _autoUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
             _autoUpdateTimer.Tick += OnAutoUpdateTick;
+
+            _idleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(IdleCheckSeconds) };
+            _idleTimer.Tick += OnIdleTick;
+            if (_settings.IdlePause)
+            {
+                _idleTimer.Start();
+            }
+
+            // A portable copy can be moved between launches, so the startup
+            // entry is rewritten to point at wherever the exe lives now.
+            if (_settings.StartWithWindows)
+            {
+                string ignored;
+                StartupEntry.TrySet(true, out ignored);
+            }
 
             _previewTimer = new DispatcherTimer
             {
@@ -223,8 +258,8 @@ namespace DiscordPresence
                 Center = new Point(0.5, 0.5),
                 GradientOrigin = new Point(0.5, 0.5)
             };
-            glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0x1C, 0x72, 0x89, 0xDA), 0));
-            glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0x72, 0x89, 0xDA), 1));
+            AddAccentGlow(glowBrush, 0x1C, 0);
+            AddAccentGlow(glowBrush, 0x00, 1);
             glow.Fill = glowBrush;
             contentLayer.Children.Add(glow);
 
@@ -267,6 +302,36 @@ namespace DiscordPresence
             };
         }
 
+        /// <summary>One softer-to-transparent end of an accent halo, kept so the
+        /// halo can follow a custom accent colour.</summary>
+        private sealed class AccentGlow
+        {
+            public GradientStop Stop;
+            public byte Alpha;
+        }
+
+        private void AddAccentGlow(RadialGradientBrush brush, byte alpha, double offset)
+        {
+            GradientStop stop = new GradientStop(GlowColor(alpha), offset);
+            brush.GradientStops.Add(stop);
+            _accentGlows.Add(new AccentGlow { Stop = stop, Alpha = alpha });
+        }
+
+        private static Color GlowColor(byte alpha)
+        {
+            Color accent = Theme.AccentColor;
+            return Color.FromArgb(alpha, accent.R, accent.G, accent.B);
+        }
+
+        /// <summary>Re-tints both ambient halos after the accent colour changes.</summary>
+        private void RefreshAccentGlow()
+        {
+            for (int i = 0; i < _accentGlows.Count; i++)
+            {
+                _accentGlows[i].Stop.Color = GlowColor(_accentGlows[i].Alpha);
+            }
+        }
+
         private Grid BuildBootLayer()
         {
             Grid layer = new Grid
@@ -289,8 +354,8 @@ namespace DiscordPresence
                 Center = new Point(0.5, 0.5),
                 GradientOrigin = new Point(0.5, 0.5)
             };
-            glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0x24, 0x72, 0x89, 0xDA), 0));
-            glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0x00, 0x72, 0x89, 0xDA), 1));
+            AddAccentGlow(glowBrush, 0x24, 0);
+            AddAccentGlow(glowBrush, 0x00, 1);
             glow.Fill = glowBrush;
             layer.Children.Add(glow);
 
@@ -329,7 +394,7 @@ namespace DiscordPresence
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(22, 0, 0, 0)
             };
-            brand.Children.Add(Brand.AppTile(30, Theme.Accent, Brushes.White));
+            brand.Children.Add(Brand.AppTile(30, Theme.Accent, Theme.OnAccent));
             TextBlock title = Theme.Text("Discord Presence", 13.5, FontWeights.SemiBold, Theme.TextPrimary);
             title.Margin = new Thickness(11, 0, 0, 0);
             brand.Children.Add(title);
@@ -389,10 +454,6 @@ namespace DiscordPresence
             // Every header control is a Discord-style status pill: a flat
             // rounded surface with a short label, like the connection chip. The
             // unseen-release count rides inside the Changelog pill.
-            _appearanceButton = Theme.Pill("Dark", "Appearance", out _appearanceLabel);
-            _appearanceButton.Click += delegate { SetLightMode(!_settings.LightMode); };
-            RefreshAppearanceButton();
-
             TextBlock changelogLabel;
             Button changelogButton = Theme.Pill("Changelog",
                 "Release notes and recent changes", out changelogLabel, null, _changelogBadge);
@@ -411,7 +472,6 @@ namespace DiscordPresence
             };
             statusGroup.Children.Add(statusChip);
             statusGroup.Children.Add(changelogButton);
-            statusGroup.Children.Add(_appearanceButton);
             statusGroup.Children.Add(settingsButton);
             Grid.SetColumn(statusGroup, 1);
             bar.Children.Add(statusGroup);
@@ -941,6 +1001,7 @@ namespace DiscordPresence
             _deletePresetButton.ToolTip = active
                 ? "Delete preset \"" + _activePresetName + "\""
                 : "Select a preset to delete it";
+            RefreshAboutInfo();
         }
 
         private Button CreatePresetChip(PresencePreset preset)
@@ -1226,61 +1287,25 @@ namespace DiscordPresence
             _changelogBadge.Visibility = Visibility.Visible;
         }
 
-        private void RefreshAppearanceButton()
-        {
-            if (_appearanceButton == null)
-            {
-                return;
-            }
-
-            bool light = _settings.LightMode;
-            string mode = light ? "Light" : "Dark";
-            if (_appearanceLabel != null)
-            {
-                _appearanceLabel.Text = mode;
-            }
-
-            string action = light ? "Switch to dark mode" : "Switch to light mode";
-            _appearanceButton.ToolTip = action;
-            AutomationProperties.SetName(_appearanceButton, mode);
-            AutomationProperties.SetHelpText(_appearanceButton, action);
-        }
-
         /// <summary>
-        /// A soft accent flash after the appearance pill switches modes: the
-        /// surface picks up the accent colour and settles back to its resting
-        /// tint. Skipped when Reduce motion is on.
+        /// A soft accent flash on the selected appearance tile after a theme
+        /// change, so the switch is visible even when two themes look similar.
+        /// Skipped when Reduce motion is on.
         /// </summary>
-        private void PlayAppearancePulse()
+        private void FlashAppearanceTiles()
         {
-            if (_settings.ReduceMotion || _appearanceButton == null)
+            if (_settings.ReduceMotion)
             {
                 return;
             }
-
-            Color accent = Theme.AccentColor;
-            Color burst = Color.FromArgb(0x54, accent.R, accent.G, accent.B);
-            Color resting = Theme.HoverOverlay.Color;
-
-            SolidColorBrush flash = new SolidColorBrush(burst);
-            _appearanceButton.Background = flash;
-
-            ColorAnimation settle = new ColorAnimation
+            if (_darkTile != null && _darkTile.IsSelected)
             {
-                From = burst,
-                To = resting,
-                Duration = TimeSpan.FromMilliseconds(420),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            settle.Completed += delegate
+                _darkTile.PlayAccentFlash();
+            }
+            if (_lightTile != null && _lightTile.IsSelected)
             {
-                // Hand the surface back to the palette so it follows the theme.
-                if (ReferenceEquals(_appearanceButton.Background, flash))
-                {
-                    _appearanceButton.ClearValue(Control.BackgroundProperty);
-                }
-            };
-            flash.BeginAnimation(SolidColorBrush.ColorProperty, settle);
+                _lightTile.PlayAccentFlash();
+            }
         }
 
         private void ShowChangelogDialog()
@@ -1296,19 +1321,69 @@ namespace DiscordPresence
             RefreshChangelogBadge();
 
             StackPanel content = new StackPanel();
-            content.Children.Add(Theme.Text("Changelog", 18, FontWeights.SemiBold, Theme.TextPrimary));
+            content.Children.Add(Theme.Text("Changelog", 19, FontWeights.SemiBold, Theme.TextPrimary));
             TextBlock description = Theme.Text(
-                "What changed in each update, newest first.",
+                "The newest release is always here. Open the archive for everything before it.",
                 11.5, FontWeights.Normal, Theme.TextMuted);
             description.TextWrapping = TextWrapping.Wrap;
             description.TextTrimming = TextTrimming.None;
-            description.Margin = new Thickness(0, 6, 0, 0);
+            description.Margin = new Thickness(0, 7, 0, 0);
             content.Children.Add(description);
 
-            foreach (ChangelogEntry entry in Changelog.Entries)
+            // The board opens on the newest release alone; the archive button
+            // reveals the older entries without leaving the dialog.
+            content.Children.Add(BuildChangelogEntry(Changelog.Latest, true));
+
+            int older = Changelog.Entries.Length - 1;
+            StackPanel archive = new StackPanel { Visibility = Visibility.Collapsed };
+            for (int i = 1; i < Changelog.Entries.Length; i++)
             {
-                content.Children.Add(BuildChangelogEntry(entry, entry == Changelog.Latest));
+                archive.Children.Add(BuildChangelogEntry(Changelog.Entries[i], false));
             }
+
+            TextBlock archiveGlyph = Theme.Glyph("\uE70D", 10, Theme.TextMuted);
+            archiveGlyph.Margin = new Thickness(0, 0, 7, 0);
+            TextBlock archiveLabel = Theme.Text(
+                ArchiveLabel(false, older), 11.5, FontWeights.SemiBold, Theme.TextMuted);
+            StackPanel archiveContent = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            archiveContent.Children.Add(archiveGlyph);
+            archiveContent.Children.Add(archiveLabel);
+
+            Button archiveButton = new Button
+            {
+                Style = Theme.FindStyle("GhostButton"),
+                Content = archiveContent,
+                Height = 30,
+                Padding = new Thickness(10, 0, 12, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(-2, 6, 0, 4),
+                ToolTip = ArchiveAction(false, older)
+            };
+            AutomationProperties.SetName(archiveButton, "Older updates");
+            AutomationProperties.SetHelpText(archiveButton, ArchiveAction(false, older));
+
+            bool expanded = false;
+            archiveButton.Click += delegate
+            {
+                expanded = !expanded;
+                archive.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+                archiveGlyph.Text = expanded ? "\uE70E" : "\uE70D";
+                archiveLabel.Text = ArchiveLabel(expanded, older);
+                archiveButton.ToolTip = ArchiveAction(expanded, older);
+                AutomationProperties.SetName(archiveButton, expanded ? "Hide older updates" : "Older updates");
+                AutomationProperties.SetHelpText(archiveButton, ArchiveAction(expanded, older));
+                if (!expanded)
+                {
+                    ScrollModalToTop();
+                }
+            };
+
+            content.Children.Add(archiveButton);
+            content.Children.Add(archive);
 
             Button done = Theme.MakeButton("Done", null, "PrimaryButton");
             done.Height = 38;
@@ -1317,16 +1392,22 @@ namespace DiscordPresence
             AutomationProperties.SetName(done, "Done");
             done.Click += delegate { CloseModal(); };
 
+            content.Children.Add(new Border
+            {
+                Height = 1,
+                Background = Theme.CardBorder,
+                Margin = new Thickness(0, 16, 0, 14)
+            });
+
             StackPanel buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 4, 0, 0)
+                HorizontalAlignment = HorizontalAlignment.Right
             };
             buttons.Children.Add(done);
             content.Children.Add(buttons);
 
-            OpenModal(content);
+            OpenModal(content, 520, new Thickness(20, 18, 20, 18));
             Dispatcher.BeginInvoke(new Action(delegate
             {
                 done.Focus();
@@ -1344,6 +1425,18 @@ namespace DiscordPresence
             }
         }
 
+        private static string ArchiveLabel(bool expanded, int count)
+        {
+            return expanded ? "Hide older updates" : "Older updates (" + count + ")";
+        }
+
+        private static string ArchiveAction(bool expanded, int count)
+        {
+            return expanded
+                ? "Hide the " + count + " older releases"
+                : "Show the " + count + " releases before " + Changelog.Latest.Version;
+        }
+
         private Border BuildChangelogEntry(ChangelogEntry entry, bool latest)
         {
             Grid header = new Grid();
@@ -1356,16 +1449,17 @@ namespace DiscordPresence
                 VerticalAlignment = VerticalAlignment.Center
             };
             TextBlock version = Theme.Text(
-                "Version " + entry.Version, 12.5, FontWeights.SemiBold, Theme.TextPrimary);
+                "Version " + entry.Version,
+                latest ? 13.5 : 12.5, FontWeights.SemiBold, Theme.TextPrimary);
             heading.Children.Add(version);
             if (latest)
             {
                 Border latestChip = new Border
                 {
                     Background = Theme.AccentSoft,
-                    CornerRadius = new CornerRadius(5),
-                    Padding = new Thickness(6, 1, 6, 1),
-                    Margin = new Thickness(7, 0, 0, 0),
+                    CornerRadius = new CornerRadius(6),
+                    Padding = new Thickness(7, 2, 7, 2),
+                    Margin = new Thickness(8, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                     Child = Theme.Text("LATEST", 8.5, FontWeights.Bold, Theme.Accent)
                 };
@@ -1382,8 +1476,8 @@ namespace DiscordPresence
             body.Children.Add(header);
             foreach (string note in entry.Notes)
             {
-                Grid line = new Grid { Margin = new Thickness(0, 7, 0, 0) };
-                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(11) });
+                Grid line = new Grid { Margin = new Thickness(0, 9, 0, 0) };
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(13) });
                 line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
                 Ellipse dot = new Ellipse
@@ -1392,7 +1486,7 @@ namespace DiscordPresence
                     Height = 4,
                     Fill = Theme.Accent,
                     VerticalAlignment = VerticalAlignment.Top,
-                    Margin = new Thickness(0, 5, 0, 0)
+                    Margin = new Thickness(1, 6, 0, 0)
                 };
                 line.Children.Add(dot);
 
@@ -1406,12 +1500,12 @@ namespace DiscordPresence
 
             return new Border
             {
-                Background = Theme.SurfaceAlt,
+                Background = latest ? Theme.SurfaceAlt : Theme.ChipFill,
                 BorderBrush = Theme.CardBorder,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(13, 11, 13, 13),
-                Margin = new Thickness(0, latest ? 14 : 0, 0, 10),
+                BorderThickness = new Thickness(latest ? 1 : 0),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16, latest ? 14 : 12, 16, latest ? 16 : 14),
+                Margin = new Thickness(0, latest ? 18 : 12, 0, 0),
                 Child = body
             };
         }
@@ -1441,6 +1535,30 @@ namespace DiscordPresence
             _hotkeyRow = new ToggleRow("\uE765", "Summon hotkey",
                 "Press Ctrl+Alt+D anywhere in Windows to hide the window to the tray or bring it back.", true);
             _hotkeyRow.Toggled += delegate { SetSummonHotkey(_hotkeyRow.IsOn); };
+            _idleRow = new ToggleRow("\uE823", "Idle pause",
+                "After five minutes without keyboard or mouse input the presence is cleared, so an empty chair does not read as playing. It comes back within seconds of your next input.", true);
+            _idleRow.Toggled += delegate { SetIdlePause(_idleRow.IsOn); };
+            _rememberRow = new ToggleRow("\uE737", "Remember window size",
+                "Reopen the window at the size and position it had when you last closed it.", true);
+            _rememberRow.Toggled += delegate { SetRememberWindow(_rememberRow.IsOn); };
+            _startupRow = new ToggleRow("\uE7E8", "Start with Windows",
+                "Add one entry to your Windows startup apps, so the app is already waiting in the tray after you sign in. Switching it off removes the entry again.", true);
+            _startupRow.Toggled += delegate { SetStartWithWindows(_startupRow.IsOn); };
+
+            _darkTile = new OptionTile("\uE708", "Dark",
+                "The grey Discord surface this app was designed on.");
+            _lightTile = new OptionTile("\uE706", "Light",
+                "The same layout and spacing on a bright surface.");
+            _darkTile.Chosen += delegate { SetLightMode(false); };
+            _lightTile.Chosen += delegate { SetLightMode(true); };
+
+            _customThemeRow = new ToggleRow("\uE790", "Custom theme",
+                "Pick your own surface, accent and text colours. Every panel, border and hover shade is toned from them.", true);
+            _customThemeRow.Toggled += delegate { SetCustomTheme(_customThemeRow.IsOn); };
+
+            _picker = new ThemeColorPicker();
+            _picker.Changed += delegate { ApplyPickerColors(); };
+            _picker.ResetRequested += delegate { ResetThemeColors(); };
 
             _restartTimerButton = Theme.MakeButton("Restart timer", null, "OutlineButton");
             _restartTimerButton.Height = 32;
@@ -1451,7 +1569,16 @@ namespace DiscordPresence
             AutomationProperties.SetName(_restartTimerButton, "Restart timer");
             _restartTimerButton.Click += delegate { RestartElapsedTimer(); };
 
+            // Windows itself can drop the startup entry (a cleanup tool, or a
+            // moved portable copy). Ask the registry rather than trusting the
+            // saved flag, so the switch never lies about the real state.
+            if (_settings.StartWithWindows && !StartupEntry.IsEnabled())
+            {
+                _settings.StartWithWindows = false;
+            }
+
             RefreshSettingsTiles();
+            RefreshPicker();
 
             Button done = Theme.MakeButton("Done", null, "PrimaryButton");
             done.Height = 38;
@@ -1467,32 +1594,22 @@ namespace DiscordPresence
             };
             buttons.Children.Add(done);
 
-            TextBlock version = Theme.Text(
-                "Version " + AppVersion() + " \u00B7 Built " + BuildInfo.Built,
-                11, FontWeights.Normal, Theme.TextMuted);
-            version.VerticalAlignment = VerticalAlignment.Center;
-
-            Grid footer = new Grid { Margin = new Thickness(0, 14, 0, 0) };
-            footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            footer.Children.Add(version);
-            Grid.SetColumn(buttons, 1);
-            footer.Children.Add(buttons);
-
-            StackPanel content = new StackPanel();
-            content.Children.Add(Theme.Text("Settings", 18, FontWeights.SemiBold, Theme.TextPrimary));
-            TextBlock description = Theme.Text(
-                "Set the Discord application behind the presence, then choose how updates are published and what the close button does. Preview features sit at the bottom and are marked BETA.",
-                11.5, FontWeights.Normal, Theme.TextMuted);
-            description.TextWrapping = TextWrapping.Wrap;
-            description.TextTrimming = TextTrimming.None;
-            description.Margin = new Thickness(0, 6, 0, 0);
-            content.Children.Add(description);
-
-            TextBlock connectionCaption = Theme.Text("Connection", 11.5,
-                FontWeights.SemiBold, Theme.TextSecondary);
-            connectionCaption.Margin = new Thickness(1, 18, 0, 4);
-            content.Children.Add(connectionCaption);
+            // Each group of options gets its own pane, so the dialog shows one
+            // short section at a time instead of a single long column.
+            StackPanel connection = SettingsPane("Connection",
+                "The Discord application your presence is published through.");
+            StackPanel appearance = SettingsPane("Appearance",
+                "The built-in dark and light themes, or three colours of your own.");
+            StackPanel windowPane = SettingsPane("Window",
+                "What the close button on the title bar does.");
+            StackPanel motion = SettingsPane("Motion",
+                "Animations and window fades.");
+            StackPanel updates = SettingsPane("Updates",
+                "How edits and preset switches reach Discord.");
+            StackPanel beta = SettingsPane("Beta",
+                "Preview features. They are tested and usable, but their behaviour can still change in a later release.");
+            StackPanel about = SettingsPane("About",
+                "What this build is, what it is doing right now, and where it keeps its files.");
 
             // The field is shared with the settings dialog across openings, so
             // unparent it from the previous dialog before reusing it here.
@@ -1501,72 +1618,355 @@ namespace DiscordPresence
             {
                 previousParent.Children.Remove(_applicationId);
             }
-            content.Children.Add(_applicationId);
+            AddSetting(connection, _applicationId, 20);
 
             TextBlock applicationHint = Theme.Text(
-                "Create a free Discord application, then copy its Application ID.",
-                10.5, FontWeights.Normal, Theme.TextMuted);
+                "Create a free Discord application, then copy its Application ID into the field above.",
+                11.5, FontWeights.Normal, Theme.TextMuted);
             applicationHint.TextWrapping = TextWrapping.Wrap;
-            applicationHint.Margin = new Thickness(1, 8, 0, 0);
-            content.Children.Add(applicationHint);
+            applicationHint.TextTrimming = TextTrimming.None;
+            AddSetting(connection, applicationHint, 12);
 
             TextBlock developerLink = Theme.Link("Open the Discord Developer Portal \u2197",
                 "https://discord.com/developers/applications");
-            developerLink.Margin = new Thickness(0, 5, 0, 0);
             developerLink.HorizontalAlignment = HorizontalAlignment.Left;
-            content.Children.Add(developerLink);
+            AddSetting(connection, developerLink, 8);
 
-            TextBlock closeCaption = Theme.Text("When you close the window", 11.5,
-                FontWeights.SemiBold, Theme.TextSecondary);
-            closeCaption.Margin = new Thickness(1, 20, 0, 8);
-            content.Children.Add(closeCaption);
-            content.Children.Add(_quitTile);
-            content.Children.Add(_trayTile);
+            AddSetting(appearance, _darkTile, 20);
+            AddSetting(appearance, _lightTile, 10);
+            AddSetting(appearance, _customThemeRow, 10);
+            AddSetting(appearance, _picker, 10);
 
-            _reduceMotionRow.Margin = new Thickness(0, 0, 0, 2);
-            TextBlock motionCaption = Theme.Text("Motion", 11.5,
-                FontWeights.SemiBold, Theme.TextSecondary);
-            motionCaption.Margin = new Thickness(1, 12, 0, 8);
-            content.Children.Add(motionCaption);
-            content.Children.Add(_reduceMotionRow);
+            AddSetting(windowPane, _quitTile, 20);
+            AddSetting(windowPane, _trayTile, 10);
 
-            _autoUpdateRow.Margin = new Thickness(0, 0, 0, 2);
-            TextBlock publishCaption = Theme.Text("Presence updates", 11.5,
-                FontWeights.SemiBold, Theme.TextSecondary);
-            publishCaption.Margin = new Thickness(1, 12, 0, 8);
-            content.Children.Add(publishCaption);
-            content.Children.Add(_autoUpdateRow);
+            AddSetting(motion, _reduceMotionRow, 20);
 
-            TextBlock betaCaption = Theme.Text("Beta", 11.5,
-                FontWeights.SemiBold, Theme.TextSecondary);
-            betaCaption.Margin = new Thickness(1, 20, 0, 0);
-            content.Children.Add(betaCaption);
+            AddSetting(updates, _autoUpdateRow, 20);
 
-            TextBlock betaHint = Theme.Text(
-                "Preview features. They are tested and usable, but their behaviour can still change in a later release.",
-                10.5, FontWeights.Normal, Theme.TextMuted);
-            betaHint.TextWrapping = TextWrapping.Wrap;
-            betaHint.TextTrimming = TextTrimming.None;
-            betaHint.Margin = new Thickness(1, 4, 0, 8);
-            content.Children.Add(betaHint);
+            AddSetting(beta, _performanceRow, 20);
+            AddSetting(beta, _elapsedRow, 10);
+            AddSetting(beta, _restartTimerButton, 10);
+            AddSetting(beta, _hotkeyRow, 10);
+            AddSetting(beta, _idleRow, 10);
+            AddSetting(beta, _rememberRow, 10);
+            AddSetting(beta, _startupRow, 10);
 
-            _performanceRow.Margin = new Thickness(0, 0, 0, 8);
-            content.Children.Add(_performanceRow);
+            TextBlock blurb = Theme.Text(
+                "Discord Presence edits the Rich Presence card other people see on your profile. It talks to the Discord client on this PC over its local IPC pipe, so there is no account, token or server involved.",
+                11.5, FontWeights.Normal, Theme.TextMuted);
+            blurb.TextWrapping = TextWrapping.Wrap;
+            blurb.TextTrimming = TextTrimming.None;
+            AddSetting(about, blurb, 20);
 
-            _elapsedRow.Margin = new Thickness(0, 0, 0, 8);
-            content.Children.Add(_elapsedRow);
-            content.Children.Add(_restartTimerButton);
+            StackPanel build = new StackPanel();
+            build.Children.Add(AboutRow("Version", AppVersion()));
+            build.Children.Add(AboutRow("Built", BuildInfo.Built));
+            build.Children.Add(AboutRow("Runtime", SystemFacts.Runtime()));
+            build.Children.Add(AboutRow("Windows", SystemFacts.WindowsVersion()));
+            AddSetting(about, InfoCard(build), 20);
 
-            _hotkeyRow.Margin = new Thickness(0, 6, 0, 2);
-            content.Children.Add(_hotkeyRow);
+            _aboutDiscord = Theme.Text(string.Empty, 12, FontWeights.SemiBold, Theme.TextPrimary);
+            _aboutPresence = Theme.Text(string.Empty, 12, FontWeights.SemiBold, Theme.TextPrimary);
+            _aboutAppId = Theme.Text(string.Empty, 12, FontWeights.SemiBold, Theme.TextPrimary);
+            _aboutPresets = Theme.Text(string.Empty, 12, FontWeights.SemiBold, Theme.TextPrimary);
+            StackPanel session = new StackPanel();
+            session.Children.Add(AboutRow("Discord", _aboutDiscord));
+            session.Children.Add(AboutRow("Presence", _aboutPresence));
+            session.Children.Add(AboutRow("Application ID", _aboutAppId));
+            session.Children.Add(AboutRow("Saved presets", _aboutPresets));
+            AddSetting(about, InfoCard(session), 16);
 
-            content.Children.Add(footer);
+            StackPanel files = new StackPanel();
+            files.Children.Add(FileRow("Application", SystemFacts.ExecutablePath()));
+            files.Children.Add(FileRow("Settings", SettingsStore.ActivePath()));
+            AddSetting(about, InfoCard(files), 16);
 
-            OpenModal(content);
+            Button openFolder = Theme.MakeButton("Open app folder", null, "OutlineButton");
+            openFolder.Height = 32;
+            openFolder.MinWidth = 0;
+            openFolder.Padding = new Thickness(13, 0, 13, 0);
+            openFolder.HorizontalAlignment = HorizontalAlignment.Left;
+            openFolder.ToolTip = "Show the folder this portable exe runs from";
+            AutomationProperties.SetName(openFolder, "Open app folder");
+            openFolder.Click += delegate { OpenAppFolder(); };
+            AddSetting(about, openFolder, 12);
+
+            StackPanel project = new StackPanel();
+            project.Children.Add(LinkLine("Source code, releases and screenshots \u2197",
+                "https://github.com/jumayusiii/Discord-Presence"));
+            project.Children.Add(LinkLine("Report a problem \u2197",
+                "https://github.com/jumayusiii/Discord-Presence/issues"));
+            project.Children.Add(LinkLine("Discord Developer Portal \u2197",
+                "https://discord.com/developers/applications"));
+            AddSetting(about, InfoCard(project), 16);
+
+            AddSetting(about, Theme.Text("Discord Rich Presence Tool \u00A9 2026 by Jumayusi",
+                11, FontWeights.Normal, Theme.TextMuted), 16);
+
+            TextBlock portable = Theme.Text(
+                "Portable build: no installer, no background service, nothing written outside the two paths above.",
+                11, FontWeights.Normal, Theme.TextMuted);
+            portable.TextWrapping = TextWrapping.Wrap;
+            portable.TextTrimming = TextTrimming.None;
+            AddSetting(about, portable, 6);
+            RefreshAboutInfo();
+
+            StackPanel[] panes = new StackPanel[]
+            {
+                connection, appearance, windowPane, motion, updates, beta, about
+            };
+            string[] names = new string[]
+            {
+                "Connection", "Appearance", "Window", "Motion", "Updates", "Beta", "About"
+            };
+
+            StackPanel paneHost = new StackPanel();
+            for (int i = 0; i < panes.Length; i++)
+            {
+                panes[i].Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed;
+                paneHost.Children.Add(panes[i]);
+            }
+
+            // The pane area keeps one height no matter which section is shown:
+            // a long section scrolls inside it instead of stretching the whole
+            // dialog whenever the rail selection changes.
+            ScrollViewer paneScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Focusable = false,
+                PanningMode = PanningMode.VerticalOnly,
+                MaxHeight = SettingsPaneHeight,
+                Content = paneHost
+            };
+            _settingsPaneScroll = paneScroll;
+
+            StackPanel railContent = new StackPanel();
+            TextBlock railTitle = Theme.Text("Settings", 16.5, FontWeights.SemiBold, Theme.TextPrimary);
+            railTitle.Margin = new Thickness(11, 6, 0, 14);
+            railContent.Children.Add(railTitle);
+
+            NavItem[] nav = new NavItem[names.Length];
+            for (int i = 0; i < names.Length; i++)
+            {
+                NavItem item = new NavItem(names[i]);
+                item.SetSelected(i == 0);
+                int index = i;
+                item.Chosen += delegate { SelectSettingsSection(index); };
+                nav[i] = item;
+                railContent.Children.Add(item);
+            }
+            _settingsNav = nav;
+            _settingsPanes = panes;
+
+            Border rail = new Border
+            {
+                Background = Theme.SurfaceAlt,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(8, 10, 8, 10),
+                Child = railContent
+            };
+
+            Grid layout = new Grid();
+            // The pane area has a fixed height, so switching sections never
+            // makes the dialog jump around, and the rail fills that height.
+            layout.MinHeight = SettingsPaneHeight;
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+            layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            layout.Children.Add(rail);
+            paneScroll.Margin = new Thickness(22, 2, 0, 0);
+            Grid.SetColumn(paneScroll, 1);
+            layout.Children.Add(paneScroll);
+
+            StackPanel content = new StackPanel();
+            content.Children.Add(layout);
+            content.Children.Add(new Border
+            {
+                Height = 1,
+                Background = Theme.CardBorder,
+                Margin = new Thickness(0, 24, 0, 14)
+            });
+            content.Children.Add(buttons);
+
+            double width = Math.Min(780, Math.Max(520, ActualWidth - 120));
+            OpenModal(content, width, new Thickness(20, 18, 20, 16));
             Dispatcher.BeginInvoke(new Action(delegate
             {
-                _quitTile.Focus();
+                if (_settingsNav != null && _settingsNav.Length > 0)
+                {
+                    _settingsNav[0].Focus();
+                }
             }), DispatcherPriority.Input);
+        }
+
+        private static StackPanel SettingsPane(string title, string subtitle)
+        {
+            StackPanel pane = new StackPanel();
+            pane.Children.Add(Theme.Text(title, 16.5, FontWeights.SemiBold, Theme.TextPrimary));
+            TextBlock sub = Theme.Text(subtitle, 11.5, FontWeights.Normal, Theme.TextMuted);
+            sub.TextWrapping = TextWrapping.Wrap;
+            sub.TextTrimming = TextTrimming.None;
+            sub.Margin = new Thickness(0, 7, 0, 0);
+            pane.Children.Add(sub);
+            return pane;
+        }
+
+        private static void AddSetting(Panel pane, UIElement row, double top)
+        {
+            FrameworkElement element = row as FrameworkElement;
+            if (element != null)
+            {
+                element.Margin = new Thickness(element.Margin.Left, top,
+                    element.Margin.Right, element.Margin.Bottom);
+            }
+            pane.Children.Add(row);
+        }
+
+        private static Grid AboutRow(string label, string value)
+        {
+            return AboutRow(label, Theme.Text(value, 12, FontWeights.SemiBold, Theme.TextPrimary));
+        }
+
+        private static Grid AboutRow(string label, TextBlock value)
+        {
+            Grid row = new Grid { Margin = new Thickness(0, 0, 0, 10) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(Theme.Text(label, 12, FontWeights.Normal, Theme.TextMuted));
+            value.TextAlignment = TextAlignment.Right;
+            Grid.SetColumn(value, 1);
+            row.Children.Add(value);
+            return row;
+        }
+
+        /// <summary>Titled-looking panel used for the About section's info blocks.</summary>
+        private static Border InfoCard(StackPanel body)
+        {
+            return new Border
+            {
+                Background = Theme.SurfaceAlt,
+                BorderBrush = Theme.CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16, 14, 16, 12),
+                Child = body
+            };
+        }
+
+        /// <summary>A path row: label on top, the whole value wrapped underneath.</summary>
+        private static StackPanel FileRow(string label, string value)
+        {
+            StackPanel row = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+            row.Children.Add(Theme.Text(label, 11, FontWeights.Normal, Theme.TextMuted));
+            TextBlock path = Theme.Text(value, 11, FontWeights.Normal, Theme.TextPrimary);
+            path.TextWrapping = TextWrapping.Wrap;
+            path.TextTrimming = TextTrimming.None;
+            path.Margin = new Thickness(0, 3, 0, 0);
+            row.Children.Add(path);
+            return row;
+        }
+
+        private static TextBlock LinkLine(string label, string url)
+        {
+            TextBlock link = Theme.Link(label, url);
+            link.HorizontalAlignment = HorizontalAlignment.Left;
+            link.Margin = new Thickness(0, 0, 0, 8);
+            return link;
+        }
+
+        /// <summary>Keeps the live half of the About section honest.</summary>
+        private void RefreshAboutInfo()
+        {
+            if (_aboutDiscord == null)
+            {
+                return;
+            }
+
+            string id = _applicationId != null ? _applicationId.Value : string.Empty;
+            if (_rpc.IsConnected)
+            {
+                _aboutDiscord.Text = "Connected";
+                _aboutDiscord.Foreground = Theme.Success;
+            }
+            else if (!IsValidAppId(id))
+            {
+                _aboutDiscord.Text = "No Application ID yet";
+                _aboutDiscord.Foreground = Theme.TextMuted;
+            }
+            else
+            {
+                _aboutDiscord.Text = "Discord offline";
+                _aboutDiscord.Foreground = Theme.TextMuted;
+            }
+
+            if (_idlePaused)
+            {
+                _aboutPresence.Text = "Paused while idle";
+                _aboutPresence.Foreground = Theme.Warning;
+            }
+            else if (_lastPublished == null)
+            {
+                _aboutPresence.Text = _restoreSuppressed ? "Cleared" : "Nothing published";
+                _aboutPresence.Foreground = Theme.TextMuted;
+            }
+            else
+            {
+                _aboutPresence.Text = "Live on your profile";
+                _aboutPresence.Foreground = Theme.Success;
+            }
+
+            _aboutAppId.Text = IsValidAppId(id) ? id : "Not set";
+            _aboutAppId.Foreground = IsValidAppId(id) ? Theme.TextPrimary : Theme.TextMuted;
+            _aboutPresets.Text = _presets.Count == 1 ? "1 preset" : _presets.Count + " presets";
+        }
+
+        private void OpenAppFolder()
+        {
+            try
+            {
+                string folder = System.IO.Path.GetDirectoryName(SystemFacts.ExecutablePath());
+                if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder))
+                {
+                    ShowSnackbar("The folder this build runs from is not reachable.", SnackbarKind.Error);
+                    return;
+                }
+                Process.Start("explorer.exe", "\"" + folder + "\"");
+            }
+            catch (Exception ex)
+            {
+                ShowSnackbar("Windows would not open that folder: " + ex.Message, SnackbarKind.Error);
+            }
+        }
+
+        private void SelectSettingsSection(int index)
+        {
+            if (_settingsPanes == null || _settingsNav == null)
+            {
+                return;
+            }
+            for (int i = 0; i < _settingsPanes.Length; i++)
+            {
+                if (_settingsPanes[i] != null)
+                {
+                    _settingsPanes[i].Visibility =
+                        i == index ? Visibility.Visible : Visibility.Collapsed;
+                }
+                if (i < _settingsNav.Length && _settingsNav[i] != null)
+                {
+                    _settingsNav[i].SetSelected(i == index);
+                }
+            }
+            if (_settingsPaneScroll != null)
+            {
+                _settingsPaneScroll.ScrollToTop();
+            }
+            if (_modalScroll != null)
+            {
+                _modalScroll.ScrollToTop();
+            }
         }
 
         private static string AppVersion()
@@ -1605,10 +2005,35 @@ namespace DiscordPresence
             {
                 _hotkeyRow.SetOn(_settings.SummonHotkey);
             }
+            if (_idleRow != null)
+            {
+                _idleRow.SetOn(_settings.IdlePause);
+            }
+            if (_rememberRow != null)
+            {
+                _rememberRow.SetOn(_settings.RememberWindow);
+            }
+            if (_startupRow != null)
+            {
+                _startupRow.SetOn(_settings.StartWithWindows);
+            }
+            if (_darkTile != null)
+            {
+                _darkTile.SetSelected(!_settings.LightMode && !_settings.CustomTheme);
+            }
+            if (_lightTile != null)
+            {
+                _lightTile.SetSelected(_settings.LightMode && !_settings.CustomTheme);
+            }
+            if (_customThemeRow != null)
+            {
+                _customThemeRow.SetOn(_settings.CustomTheme);
+            }
             if (_restartTimerButton != null)
             {
                 _restartTimerButton.IsEnabled = _settings.ShowElapsed;
             }
+            RefreshAboutInfo();
         }
 
         private void SetMinimizeToTray(bool value)
@@ -1630,19 +2055,181 @@ namespace DiscordPresence
             RefreshSettingsTiles();
         }
 
+        /// <summary>
+        /// Picks one of the two built-in themes. Choosing one also leaves the
+        /// custom colours, which stay saved for the next time they are switched
+        /// back on.
+        /// </summary>
         private void SetLightMode(bool value)
         {
-            if (_settings.LightMode == value)
+            if (_settings.LightMode == value && !_settings.CustomTheme)
             {
                 return;
             }
             _settings.LightMode = value;
+            _settings.CustomTheme = false;
             Theme.Apply(value ? Theme.Appearance.Light : Theme.Appearance.Dark);
+            AfterThemeChange(true);
+            FlashAppearanceTiles();
+        }
+
+        /// <summary>
+        /// Switches the custom palette on or off. On the way in it reuses the
+        /// colours from last time; when there are none it copies the built-in
+        /// theme that is on screen, so nothing jumps as the switch flips.
+        /// </summary>
+        private void SetCustomTheme(bool value)
+        {
+            if (_settings.CustomTheme == value)
+            {
+                return;
+            }
+            _settings.CustomTheme = value;
+
+            if (value)
+            {
+                Color surface = Colors.Black;
+                Color accent = Colors.Black;
+                Color text = Colors.Black;
+                if (!StoredAnchors(out surface, out accent, out text))
+                {
+                    Theme.BuiltinAnchors(_settings.LightMode, out surface, out accent, out text);
+                    StoreAnchors(surface, accent, text);
+                }
+                Theme.ApplyCustom(surface, accent, text);
+            }
+            else
+            {
+                Theme.Apply(_settings.LightMode ? Theme.Appearance.Light : Theme.Appearance.Dark);
+            }
+
+            AfterThemeChange(true);
+        }
+
+        /// <summary>
+        /// Applies what the picker shows as it changes, then writes the file
+        /// once the user stops fiddling instead of on every step of a drag.
+        /// </summary>
+        private void ApplyPickerColors()
+        {
+            if (_picker == null)
+            {
+                return;
+            }
+
+            Color surface = _picker.SurfaceColor;
+            Color accent = _picker.AccentColor;
+            Color text = _picker.TextColor;
+            StoreAnchors(surface, accent, text);
+            _settings.CustomTheme = true;
+            Theme.ApplyCustom(surface, accent, text);
+            AfterThemeChange(false);
+            ScheduleThemeSave();
+        }
+
+        /// <summary>Copies the stock colours of the chosen built-in theme into the anchors.</summary>
+        private void ResetThemeColors()
+        {
+            if (_picker == null)
+            {
+                return;
+            }
+
+            Color surface = Colors.Black;
+            Color accent = Colors.Black;
+            Color text = Colors.Black;
+            Theme.BuiltinAnchors(_settings.LightMode, out surface, out accent, out text);
+            _picker.Load(surface, accent, text, _picker.ActiveKind);
+            ApplyPickerColors();
+        }
+
+        /// <summary>Shared tail of every theme change: window chrome, tiles, saved file.</summary>
+        private void AfterThemeChange(bool save)
+        {
             ApplySystemTheme(IntPtr.Zero);
-            RefreshAppearanceButton();
-            PlayAppearancePulse();
-            SettingsStore.Save(CollectSettings());
+            RefreshAccentGlow();
             RefreshSettingsTiles();
+            RefreshPicker();
+            if (save)
+            {
+                SettingsStore.Save(CollectSettings());
+            }
+        }
+
+        /// <summary>
+        /// The whole picker follows the custom switch, and always shows real
+        /// colours: the saved anchors, or the built-in ones when there are none
+        /// yet, so no row ever reads #000000.
+        /// </summary>
+        private void RefreshPicker()
+        {
+            if (_picker == null)
+            {
+                return;
+            }
+
+            _picker.Visibility = _settings.CustomTheme ? Visibility.Visible : Visibility.Collapsed;
+
+            Color surface = Colors.Black;
+            Color accent = Colors.Black;
+            Color text = Colors.Black;
+            if (!StoredAnchors(out surface, out accent, out text))
+            {
+                Theme.BuiltinAnchors(_settings.LightMode, out surface, out accent, out text);
+            }
+            _picker.Load(surface, accent, text, _picker.ActiveKind);
+        }
+
+        /// <summary>Applies the saved look before the window is built.</summary>
+        private void ApplyStoredTheme()
+        {
+            Color surface = Colors.Black;
+            Color accent = Colors.Black;
+            Color text = Colors.Black;
+            if (_settings.CustomTheme && StoredAnchors(out surface, out accent, out text))
+            {
+                Theme.ApplyCustom(surface, accent, text);
+                return;
+            }
+
+            // A custom flag without usable colours is stale: fall back to the
+            // built-in theme instead of rendering something half-applied.
+            _settings.CustomTheme = false;
+            Theme.Apply(_settings.LightMode ? Theme.Appearance.Light : Theme.Appearance.Dark);
+        }
+
+        /// <summary>Reads the three saved anchors; false when one is missing or malformed.</summary>
+        private bool StoredAnchors(out Color surface, out Color accent, out Color text)
+        {
+            surface = Colors.Black;
+            accent = Colors.Black;
+            text = Colors.Black;
+            return Theme.TryParseHex(_settings.ThemeSurface, out surface)
+                && Theme.TryParseHex(_settings.ThemeAccent, out accent)
+                && Theme.TryParseHex(_settings.ThemeText, out text);
+        }
+
+        private void StoreAnchors(Color surface, Color accent, Color text)
+        {
+            _settings.ThemeSurface = Theme.ToHex(surface);
+            _settings.ThemeAccent = Theme.ToHex(accent);
+            _settings.ThemeText = Theme.ToHex(text);
+        }
+
+        /// <summary>Writes the settings once the dragging stops, not on every pixel.</summary>
+        private void ScheduleThemeSave()
+        {
+            if (_themeSaveTimer == null)
+            {
+                _themeSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                _themeSaveTimer.Tick += delegate
+                {
+                    _themeSaveTimer.Stop();
+                    SettingsStore.Save(CollectSettings());
+                };
+            }
+            _themeSaveTimer.Stop();
+            _themeSaveTimer.Start();
         }
 
         private void SetAutoUpdate(bool value)
@@ -1706,6 +2293,235 @@ namespace DiscordPresence
                 _previewTimer.Interval = TimeSpan.FromMilliseconds(
                     _settings.PerformanceMode ? PreviewFrameDelay : PreviewSettleDelay);
             }
+        }
+
+        /// <summary>Puts the window back where the user left it, if it still fits.</summary>
+        private void ApplySavedGeometry(Rect work)
+        {
+            if (!_settings.RememberWindow || _settings.WindowWidth <= 0 || _settings.WindowHeight <= 0)
+            {
+                return;
+            }
+
+            Rect screen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+            double width = Math.Max(MinWidth, Math.Min(_settings.WindowWidth, Math.Max(MinWidth, screen.Width)));
+            double height = Math.Max(MinHeight, Math.Min(_settings.WindowHeight, Math.Max(MinHeight, screen.Height)));
+            // A saved spot on a monitor that is gone now comes back on screen
+            // instead of off in the void.
+            double left = Math.Max(screen.Left - width + 160, Math.Min(_settings.WindowLeft, screen.Right - 160));
+            double top = Math.Max(screen.Top, Math.Min(_settings.WindowTop, screen.Bottom - 80));
+
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Width = width;
+            Height = height;
+            Left = left;
+            Top = top;
+        }
+
+        /// <summary>Remembers the window box for the next launch.</summary>
+        private void CaptureWindowGeometry()
+        {
+            if (!_settings.RememberWindow || !IsLoaded)
+            {
+                return;
+            }
+
+            Rect bounds = WindowState == WindowState.Normal
+                ? new Rect(Left, Top, Width, Height)
+                : RestoreBounds;
+            if (double.IsNaN(bounds.Left) || double.IsNaN(bounds.Top) ||
+                double.IsNaN(bounds.Width) || double.IsNaN(bounds.Height) ||
+                bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                return;
+            }
+
+            _settings.WindowLeft = bounds.Left;
+            _settings.WindowTop = bounds.Top;
+            _settings.WindowWidth = bounds.Width;
+            _settings.WindowHeight = bounds.Height;
+        }
+
+        /// <summary>
+        /// Clears the presence once the whole machine has been untouched for
+        /// five minutes, so a stretched-out lunch break does not read as
+        /// "playing". Any input brings the same presence straight back.
+        /// </summary>
+        private void OnIdleTick(object sender, EventArgs e)
+        {
+            if (_closing || !_settings.IdlePause)
+            {
+                return;
+            }
+
+            long idle = IdleMilliseconds();
+            if (idle < 0)
+            {
+                return;
+            }
+
+            if (_idlePaused)
+            {
+                // Anything shorter than the pause threshold means the machine
+                // is in use again, so the presence comes straight back. Asking
+                // for input "right now" would miss a user who is typing
+                // steadily but slower than the check interval.
+                if (idle < IdlePauseAfterMs)
+                {
+                    ResumeFromIdle();
+                }
+                return;
+            }
+
+            if (idle < IdlePauseAfterMs || _lastPublished == null || !_rpc.IsConnected)
+            {
+                return;
+            }
+
+            PauseForIdle();
+        }
+
+        private void PauseForIdle()
+        {
+            _idlePaused = true;
+            SetStatus("Idle", Theme.TextMuted);
+            Task.Run(delegate
+            {
+                string result;
+                lock (_rpcGate)
+                {
+                    result = _rpc.IsConnected ? _rpc.ClearActivity() : "Discord is offline.";
+                }
+
+                if (result == null)
+                {
+                    return;
+                }
+
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (_closing || !_idlePaused)
+                    {
+                        return;
+                    }
+                    // Nothing was cleared, so stop pretending the app is idle
+                    // and let a later check try again.
+                    _idlePaused = false;
+                    SetStatus(_rpc.IsConnected ? "Connected" : "Discord offline",
+                        _rpc.IsConnected ? Theme.Success : Theme.TextMuted);
+                }));
+            });
+        }
+
+        private void ResumeFromIdle()
+        {
+            _idlePaused = false;
+            Dictionary<string, object> activity = _lastPublished;
+            if (activity == null)
+            {
+                string ignored;
+                activity = BuildActivity(out ignored, false);
+            }
+            if (activity == null)
+            {
+                SetStatus(_rpc.IsConnected ? "Connected" : "Discord offline",
+                    _rpc.IsConnected ? Theme.Success : Theme.TextMuted);
+                return;
+            }
+
+            SetStatus("Updating", Theme.Accent);
+            PublishActivity(activity, true);
+        }
+
+        /// <summary>Milliseconds since the last keyboard or mouse input anywhere.</summary>
+        private static long IdleMilliseconds()
+        {
+            LastInputInfo info = new LastInputInfo();
+            info.Size = Marshal.SizeOf(typeof(LastInputInfo));
+            if (!GetLastInputInfo(ref info))
+            {
+                return -1;
+            }
+            // The tick count wraps about every 49 days; the unchecked
+            // subtraction still yields the right difference across the wrap.
+            return unchecked((uint)(Environment.TickCount - (int)info.Time));
+        }
+
+        private void SetIdlePause(bool value)
+        {
+            if (_settings.IdlePause == value)
+            {
+                return;
+            }
+            _settings.IdlePause = value;
+            SettingsStore.Save(CollectSettings());
+            if (value)
+            {
+                _idleTimer.Start();
+            }
+            else
+            {
+                _idleTimer.Stop();
+                if (_idlePaused)
+                {
+                    ResumeFromIdle();
+                }
+            }
+            RefreshSettingsTiles();
+            ShowSnackbar(value
+                ? "Idle pause on. The presence clears after five minutes without input and returns when you are back."
+                : "Idle pause off.", SnackbarKind.Info);
+        }
+
+        private void SetRememberWindow(bool value)
+        {
+            if (_settings.RememberWindow == value)
+            {
+                return;
+            }
+            _settings.RememberWindow = value;
+            if (value)
+            {
+                CaptureWindowGeometry();
+            }
+            else
+            {
+                _settings.WindowLeft = 0;
+                _settings.WindowTop = 0;
+                _settings.WindowWidth = 0;
+                _settings.WindowHeight = 0;
+            }
+            SettingsStore.Save(CollectSettings());
+            RefreshSettingsTiles();
+            ShowSnackbar(value
+                ? "The window reopens at this size and position from now on."
+                : "Window size and position are no longer remembered.", SnackbarKind.Info);
+        }
+
+        private void SetStartWithWindows(bool value)
+        {
+            if (_settings.StartWithWindows == value)
+            {
+                return;
+            }
+
+            string error;
+            if (!StartupEntry.TrySet(value, out error))
+            {
+                // The switch reads its state from settings, so a failed write
+                // simply snaps the row back to where it was.
+                RefreshSettingsTiles();
+                ShowSnackbar(error, SnackbarKind.Error);
+                return;
+            }
+
+            _settings.StartWithWindows = value;
+            SettingsStore.Save(CollectSettings());
+            RefreshSettingsTiles();
+            ShowSnackbar(value
+                ? "Discord Presence will start with Windows, ready in the tray."
+                : "Discord Presence no longer starts with Windows.", SnackbarKind.Info);
         }
 
         private void SetElapsed(bool value)
@@ -2071,11 +2887,18 @@ namespace DiscordPresence
 
         private void OpenModal(UIElement content)
         {
+            OpenModal(content, 460, new Thickness(22, 20, 22, 20));
+        }
+
+        private void OpenModal(UIElement content, double width, Thickness padding)
+        {
             if (_modalLayer == null)
             {
                 return;
             }
 
+            _modalCard.Width = width;
+            _modalCard.Padding = padding;
             _previousFocus = Keyboard.FocusedElement;
             // Taller dialogs stay usable when the window is resized short, and
             // they never grow past the window: the card frames them with 20px
@@ -2348,6 +3171,7 @@ namespace DiscordPresence
                 {
                     ScheduleAutoUpdate();
                     SchedulePreview();
+                    RefreshAboutInfo();
                 };
             }
         }
@@ -2580,8 +3404,10 @@ namespace DiscordPresence
 
         private void TryConnectSilently()
         {
-            if (_autoConnecting)
+            if (_autoConnecting || _idlePaused)
             {
+                // While the presence is paused for idleness there is nothing to
+                // connect for; the reconnect timer runs again after it resumes.
                 return;
             }
             string id = _applicationId.Value;
@@ -2714,6 +3540,9 @@ namespace DiscordPresence
                     if (result == null)
                     {
                         _lastPublished = activity;
+                        // A publish that lands while the app considers itself
+                        // idle means the user is back: end the pause quietly.
+                        _idlePaused = false;
                         SetStatus("Connected", Theme.Success);
                         if (_settings.ShowElapsed)
                         {
@@ -2827,6 +3656,7 @@ namespace DiscordPresence
                         _settings.ElapsedStart = 0;
                         SettingsStore.Save(CollectSettings());
                         RefreshPreview();
+                        RefreshAboutInfo();
                         ShowSnackbar("Presence cleared.", SnackbarKind.Success);
                     }
                     else
@@ -3147,11 +3977,22 @@ namespace DiscordPresence
                 Presets = _presets,
                 MinimizeToTray = _settings.MinimizeToTray,
                 LightMode = _settings.LightMode,
+                CustomTheme = _settings.CustomTheme,
+                ThemeSurface = _settings.ThemeSurface,
+                ThemeAccent = _settings.ThemeAccent,
+                ThemeText = _settings.ThemeText,
                 AutoUpdate = _settings.AutoUpdate,
                 ReduceMotion = _settings.ReduceMotion,
                 PerformanceMode = _settings.PerformanceMode,
                 ShowElapsed = _settings.ShowElapsed,
                 SummonHotkey = _settings.SummonHotkey,
+                IdlePause = _settings.IdlePause,
+                RememberWindow = _settings.RememberWindow,
+                StartWithWindows = _settings.StartWithWindows,
+                WindowLeft = _settings.WindowLeft,
+                WindowTop = _settings.WindowTop,
+                WindowWidth = _settings.WindowWidth,
+                WindowHeight = _settings.WindowHeight,
                 ElapsedStart = _settings.ElapsedStart,
                 LastSeenChangelog = _settings.LastSeenChangelog
             };
@@ -3215,6 +4056,7 @@ namespace DiscordPresence
                         SetBusy(false);
                     }
                 }
+                RefreshAboutInfo();
             }));
         }
 
@@ -3244,9 +4086,14 @@ namespace DiscordPresence
 
             _exiting = true;
             _closing = true;
+            CaptureWindowGeometry();
             DisposeTrayIcon();
             ReleaseHotkey();
             _reconnectTimer.Stop();
+            if (_idleTimer != null)
+            {
+                _idleTimer.Stop();
+            }
             if (_minimizeTimer != null)
             {
                 _minimizeTimer.Stop();
@@ -3258,6 +4105,10 @@ namespace DiscordPresence
             if (_previewTimer != null)
             {
                 _previewTimer.Stop();
+            }
+            if (_themeSaveTimer != null)
+            {
+                _themeSaveTimer.Stop();
             }
             SettingsStore.Save(CollectSettings());
             try
@@ -3299,7 +4150,7 @@ namespace DiscordPresence
 
             try
             {
-                int dark = Theme.Current == Theme.Appearance.Dark ? 1 : 0;
+                int dark = Theme.IsDark ? 1 : 0;
                 DwmSetWindowAttribute(handle, 20, ref dark, 4);
                 int rounded = 2;
                 DwmSetWindowAttribute(handle, 33, ref rounded, 4);
@@ -3331,6 +4182,16 @@ namespace DiscordPresence
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LastInputInfo
+        {
+            public int Size;
+            public uint Time;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetLastInputInfo(ref LastInputInfo info);
 
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hwnd, int id, int modifiers, int key);

@@ -20,12 +20,35 @@ namespace DiscordPresence
             Light
         }
 
-        public static readonly Color AccentColor = Color.FromRgb(0x72, 0x89, 0xDA);
-        public static readonly Color SurfaceColor = Color.FromRgb(0x1E, 0x21, 0x24);
+        // The stock Discord blurple and the two surfaces the built-in themes
+        // are built from. A custom theme keeps the same structure but anchors
+        // it to the three colours the user picked.
+        private static readonly Color BuiltinAccent = Color.FromRgb(0x72, 0x89, 0xDA);
+        private static readonly Color DarkSurface = Color.FromRgb(0x1E, 0x21, 0x24);
+        private static readonly Color LightSurface = Color.FromRgb(0xF2, 0xF3, 0xF5);
+
+        /// <summary>The accent in force right now, custom themes included.</summary>
+        public static Color AccentColor { get; private set; }
+
+        /// <summary>The window background in force right now.</summary>
+        public static Color SurfaceColor { get; private set; }
+
+        /// <summary>True while the user's own three colours are in charge.</summary>
+        public static bool CustomActive { get; private set; }
+
+        /// <summary>True while the palette in force is a dark one.</summary>
+        public static bool IsDark { get; private set; }
+
+        static Theme()
+        {
+            AccentColor = BuiltinAccent;
+            SurfaceColor = DarkSurface;
+            IsDark = true;
+        }
 
         // Palette brushes stay mutable so switching appearance only has to
         // repaint these instances; every element shares them.
-        public static readonly SolidColorBrush Accent = Solid(AccentColor);
+        public static readonly SolidColorBrush Accent = Solid(BuiltinAccent);
         public static readonly SolidColorBrush AccentHover = Solid(Color.FromRgb(0x82, 0x98, 0xE2));
         public static readonly SolidColorBrush AccentSoft = Solid(Color.FromArgb(0x2E, 0x72, 0x89, 0xDA));
         public static readonly SolidColorBrush Surface = Solid(SurfaceColor);
@@ -52,10 +75,10 @@ namespace DiscordPresence
         public static readonly SolidColorBrush Danger = Solid(Color.FromRgb(0xED, 0x42, 0x45));
         public static readonly SolidColorBrush Warning = Solid(Color.FromRgb(0xFA, 0xA6, 0x1A));
 
-        public static Appearance Current { get; private set; }
+        /// <summary>Ink that stays readable on top of the accent colour.</summary>
+        public static readonly SolidColorBrush OnAccent = Solid(Colors.White);
 
-        private static readonly Color DarkSurface = Color.FromRgb(0x1E, 0x21, 0x24);
-        private static readonly Color LightSurface = Color.FromRgb(0xF2, 0xF3, 0xF5);
+        public static Appearance Current { get; private set; }
 
         public static readonly FontFamily UiFont = new FontFamily("Segoe UI");
         public static readonly FontFamily IconFont = new FontFamily("Segoe MDL2 Assets");
@@ -110,7 +133,8 @@ namespace DiscordPresence
   </Style>
 
   <Style x:Key=""PrimaryButton"" TargetType=""Button"" BasedOn=""{StaticResource BaseButton}"">
-    <Setter Property=""Background"" Value=""#7289DA""/>
+    <Setter Property=""Background"" Value=""{DynamicResource AccentBrush}""/>
+    <Setter Property=""Foreground"" Value=""{DynamicResource OnAccentBrush}""/>
   </Style>
 
   <Style x:Key=""OutlineButton"" TargetType=""Button"" BasedOn=""{StaticResource BaseButton}"">
@@ -147,7 +171,7 @@ namespace DiscordPresence
                                 RecognizesAccessKey=""True""/>
               <Border x:Name=""Hover"" Background=""{DynamicResource HoverOverlayBrush}"" CornerRadius=""14""
                       Opacity=""0"" IsHitTestVisible=""False""/>
-              <Border x:Name=""Focus"" BorderBrush=""#7289DA"" BorderThickness=""1"" CornerRadius=""14""
+              <Border x:Name=""Focus"" BorderBrush=""{DynamicResource AccentBrush}"" BorderThickness=""1"" CornerRadius=""14""
                       Opacity=""0"" IsHitTestVisible=""False""/>
             </Grid>
           </Border>
@@ -177,8 +201,8 @@ namespace DiscordPresence
     <Setter Property=""BorderThickness"" Value=""0""/>
     <Setter Property=""FontFamily"" Value=""Segoe UI""/>
     <Setter Property=""FontSize"" Value=""13""/>
-    <Setter Property=""CaretBrush"" Value=""#7289DA""/>
-    <Setter Property=""SelectionBrush"" Value=""#7289DA""/>
+    <Setter Property=""CaretBrush"" Value=""{DynamicResource AccentBrush}""/>
+    <Setter Property=""SelectionBrush"" Value=""{DynamicResource AccentBrush}""/>
     <Setter Property=""SelectionOpacity"" Value=""0.45""/>
     <Setter Property=""Padding"" Value=""0""/>
     <Setter Property=""VerticalContentAlignment"" Value=""Center""/>
@@ -284,6 +308,8 @@ namespace DiscordPresence
             {
                 return;
             }
+            app.Resources["AccentBrush"] = StyleBrush(Accent);
+            app.Resources["OnAccentBrush"] = StyleBrush(OnAccent);
             app.Resources["TextPrimaryBrush"] = StyleBrush(TextPrimary);
             app.Resources["TextSecondaryBrush"] = StyleBrush(TextSecondary);
             app.Resources["InputBorderBrush"] = StyleBrush(InputBorder);
@@ -306,9 +332,18 @@ namespace DiscordPresence
         public static void Apply(Appearance appearance)
         {
             Current = appearance;
+            CustomActive = false;
             bool light = appearance == Appearance.Light;
+            IsDark = !light;
 
-            Set(Surface, light ? LightSurface : DarkSurface);
+            AccentColor = BuiltinAccent;
+            SurfaceColor = light ? LightSurface : DarkSurface;
+            Set(Accent, AccentColor);
+            Set(AccentHover, Color.FromRgb(0x82, 0x98, 0xE2));
+            Set(AccentSoft, Color.FromArgb(0x2E, 0x72, 0x89, 0xDA));
+            Set(OnAccent, Colors.White);
+
+            Set(Surface, SurfaceColor);
             Set(SurfaceAlt, light ? Color.FromRgb(0xFF, 0xFF, 0xFF) : Color.FromRgb(0x1B, 0x1E, 0x21));
             Set(CardBrush, light ? Color.FromRgb(0xFF, 0xFF, 0xFF) : Color.FromRgb(0x24, 0x27, 0x2C));
             Set(CardBorder, light ? Color.FromRgb(0xE2, 0xE5, 0xEA) : Color.FromRgb(0x2E, 0x33, 0x39));
@@ -329,6 +364,184 @@ namespace DiscordPresence
             Set(ThumbHoverBrush, light ? Color.FromRgb(0xA9, 0xB1, 0xBC) : Color.FromRgb(0x59, 0x61, 0x6C));
 
             RefreshStyleBrushes();
+        }
+
+        /// <summary>
+        /// Paints the whole palette from three anchors the user picked. The
+        /// derived tones follow the surface's own brightness, so a light
+        /// surface gets light cards and dark borders, and a dark one the other
+        /// way round. The built-in palettes are these same tones with the stock
+        /// Discord colours as the anchors.
+        /// </summary>
+        public static void ApplyCustom(Color surface, Color accent, Color text)
+        {
+            CustomActive = true;
+            bool dark = Luminance(surface) < 0.5;
+            IsDark = dark;
+            Current = dark ? Appearance.Dark : Appearance.Light;
+
+            SurfaceColor = surface;
+            AccentColor = accent;
+
+            Set(Surface, surface);
+            if (dark)
+            {
+                Set(SurfaceAlt, Tone(surface, -0.09));
+                Set(CardBrush, Tone(surface, 0.03));
+                Set(CardBorder, Tone(surface, 0.08));
+                Set(FieldBrush, Tone(surface, -0.12));
+                Set(InputBorder, Tone(surface, 0.15));
+                Set(HoverBorder, Tone(surface, 0.22));
+                Set(TooltipBrush, Tone(surface, 0.09));
+                Set(ThumbBrush, Tone(surface, 0.22));
+                Set(ThumbHoverBrush, Tone(surface, 0.30));
+            }
+            else
+            {
+                Set(SurfaceAlt, Tone(surface, 1.0));
+                Set(CardBrush, Tone(surface, 1.0));
+                Set(CardBorder, Tone(surface, -0.06));
+                Set(FieldBrush, Tone(surface, 0.42));
+                Set(InputBorder, Tone(surface, -0.15));
+                Set(HoverBorder, Tone(surface, -0.21));
+                Set(TooltipBrush, Tone(surface, 1.0));
+                Set(ThumbBrush, Tone(surface, -0.18));
+                Set(ThumbHoverBrush, Tone(surface, -0.27));
+            }
+
+            Set(TextPrimary, text);
+            Set(TextSecondary, dark ? Mix(text, surface, 0.35) : Mix(text, surface, 0.28));
+            Set(TextMuted, dark ? Mix(text, surface, 0.55) : Mix(text, surface, 0.50));
+
+            Set(Accent, accent);
+            Set(AccentHover, dark ? Tone(accent, 0.13) : Tone(accent, -0.13));
+            Set(AccentSoft, Color.FromArgb(0x2E, accent.R, accent.G, accent.B));
+            Set(SelectedFill, Mix(surface, accent, dark ? 0.20 : 0.17));
+            Set(OnAccent, Luminance(accent) > 0.62
+                ? Color.FromRgb(0x1B, 0x1E, 0x21)
+                : Colors.White);
+
+            Set(ChipFill, dark ? Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x08, 0x00, 0x00, 0x00));
+            Set(ChipBorder, dark ? Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00));
+            Set(HoverOverlay, dark ? Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x10, 0x00, 0x00, 0x00));
+            Set(HoverOverlayStrong, dark ? Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0x00, 0x00, 0x00));
+            Set(Scrim, dark ? Color.FromArgb(0xC0, 0x00, 0x00, 0x00) : Color.FromArgb(0x59, 0x00, 0x00, 0x00));
+
+            RefreshStyleBrushes();
+        }
+
+        /// <summary>
+        /// The three anchors the stock palette is built from, so the custom
+        /// theme can start from exactly what the user is looking at.
+        /// </summary>
+        public static void BuiltinAnchors(bool light, out Color surface, out Color accent, out Color text)
+        {
+            surface = light ? LightSurface : DarkSurface;
+            accent = BuiltinAccent;
+            text = light ? Color.FromRgb(0x1F, 0x23, 0x28) : Colors.White;
+        }
+
+        /// <summary>Perceived brightness of a colour, 0 (black) to 1 (white).</summary>
+        public static double Luminance(Color color)
+        {
+            return (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
+        }
+
+        /// <summary>
+        /// WCAG relative luminance: the gamma-corrected brightness used for
+        /// contrast maths, not the quick perceived one above.
+        /// </summary>
+        public static double RelativeLuminance(Color color)
+        {
+            return 0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
+        }
+
+        private static double Linear(byte channel)
+        {
+            double value = channel / 255.0;
+            return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+
+        /// <summary>WCAG contrast ratio between two colours, 1:1 to 21:1.</summary>
+        public static double ContrastRatio(Color first, Color second)
+        {
+            double a = RelativeLuminance(first);
+            double b = RelativeLuminance(second);
+            double lighter = Math.Max(a, b);
+            double darker = Math.Min(a, b);
+            return (lighter + 0.05) / (darker + 0.05);
+        }
+
+        /// <summary>White or near-black, whichever reads better on the colour.</summary>
+        public static Color ReadableInk(Color background)
+        {
+            Color dark = Color.FromRgb(0x1B, 0x1E, 0x21);
+            return ContrastRatio(Colors.White, background) >= ContrastRatio(dark, background)
+                ? Colors.White
+                : dark;
+        }
+
+        /// <summary>Blends two colours; <paramref name="amount"/> 0 keeps the first.</summary>
+        public static Color Mix(Color from, Color to, double amount)
+        {
+            amount = Clamp(amount);
+            return Color.FromRgb(
+                Channel(from.R, to.R, amount),
+                Channel(from.G, to.G, amount),
+                Channel(from.B, to.B, amount));
+        }
+
+        /// <summary>Lightens (positive) or darkens (negative) a colour.</summary>
+        public static Color Tone(Color color, double amount)
+        {
+            return amount >= 0 ? Mix(color, Colors.White, amount) : Mix(color, Colors.Black, -amount);
+        }
+
+        private static byte Channel(byte from, byte to, double amount)
+        {
+            return (byte)Math.Round(from + (to - from) * amount);
+        }
+
+        private static double Clamp(double value)
+        {
+            if (value < 0)
+            {
+                return 0;
+            }
+            return value > 1 ? 1 : value;
+        }
+
+        /// <summary>Reads #RRGGBB (with or without the hash) into a colour.</summary>
+        public static bool TryParseHex(string text, out Color color)
+        {
+            color = Colors.Black;
+            if (string.IsNullOrEmpty(text))
+            {
+                return false;
+            }
+            string value = text.Trim().TrimStart('#');
+            if (value.Length != 6)
+            {
+                return false;
+            }
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (!Uri.IsHexDigit(value[i]))
+                {
+                    return false;
+                }
+            }
+            color = Color.FromRgb(
+                Convert.ToByte(value.Substring(0, 2), 16),
+                Convert.ToByte(value.Substring(2, 2), 16),
+                Convert.ToByte(value.Substring(4, 2), 16));
+            return true;
+        }
+
+        /// <summary>Formats a colour the way the picker shows it.</summary>
+        public static string ToHex(Color color)
+        {
+            return "#" + color.R.ToString("X2") + color.G.ToString("X2") + color.B.ToString("X2");
         }
 
         private static void Set(SolidColorBrush brush, Color color)

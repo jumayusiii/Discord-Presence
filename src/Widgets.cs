@@ -382,6 +382,32 @@ namespace DiscordPresence
             Paint();
         }
 
+        /// <summary>
+        /// Blinks the tile in the accent colour and settles back into whatever
+        /// state it is really in, which gives an appearance switch a visible
+        /// moment without leaving the row painted the wrong way.
+        /// </summary>
+        public void PlayAccentFlash()
+        {
+            Color accent = Theme.AccentColor;
+            SolidColorBrush flash = new SolidColorBrush(Color.FromArgb(0x54, accent.R, accent.G, accent.B));
+            Background = flash;
+
+            ColorAnimation settle = new ColorAnimation(flash.Color, Theme.HoverOverlay.Color,
+                TimeSpan.FromMilliseconds(460))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            settle.Completed += delegate
+            {
+                if (ReferenceEquals(Background, flash))
+                {
+                    Paint();
+                }
+            };
+            flash.BeginAnimation(SolidColorBrush.ColorProperty, settle);
+        }
+
         private void Choose()
         {
             if (Chosen != null)
@@ -400,6 +426,98 @@ namespace DiscordPresence
                 _hovered ? Theme.HoverBorder : Theme.InputBorder;
             _check.Visibility = _selected ? Visibility.Visible : Visibility.Collapsed;
             _icon.Foreground = _selected ? Theme.Accent : Theme.TextSecondary;
+        }
+    }
+
+    /// <summary>
+    /// A settings navigation row: a label with a selected state and an accent
+    /// bar on its left, used by the settings rail.
+    /// </summary>
+    public sealed class NavItem : Border
+    {
+        private readonly Border _bar;
+        private readonly TextBlock _label;
+        private bool _selected;
+        private bool _hovered;
+
+        public event EventHandler Chosen;
+
+        public NavItem(string label)
+        {
+            Height = 36;
+            CornerRadius = new CornerRadius(9);
+            BorderThickness = new Thickness(0);
+            Cursor = Cursors.Hand;
+            Focusable = true;
+            Margin = new Thickness(0, 0, 0, 4);
+
+            Grid grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            _bar = new Border
+            {
+                Width = 3,
+                Height = 16,
+                CornerRadius = new CornerRadius(2),
+                Background = Brushes.Transparent,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            grid.Children.Add(_bar);
+
+            _label = Theme.Text(label, 12.5, FontWeights.SemiBold, Theme.TextSecondary);
+            _label.Margin = new Thickness(11, 0, 10, 0);
+            Grid.SetColumn(_label, 1);
+            grid.Children.Add(_label);
+
+            Child = grid;
+            AutomationProperties.SetName(this, label);
+            AutomationProperties.SetHelpText(this, "Show the " + label + " settings");
+
+            MouseEnter += delegate { _hovered = true; Paint(); };
+            MouseLeave += delegate { _hovered = false; Paint(); };
+            MouseLeftButtonUp += delegate { Choose(); };
+            KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Enter || e.Key == Key.Space)
+                {
+                    Choose();
+                    e.Handled = true;
+                }
+            };
+            GotKeyboardFocus += delegate { Paint(); };
+            LostKeyboardFocus += delegate { Paint(); };
+
+            Paint();
+        }
+
+        public bool IsSelected
+        {
+            get { return _selected; }
+        }
+
+        public void SetSelected(bool selected)
+        {
+            _selected = selected;
+            Paint();
+        }
+
+        private void Choose()
+        {
+            if (Chosen != null)
+            {
+                Chosen(this, EventArgs.Empty);
+            }
+        }
+
+        private void Paint()
+        {
+            Background = _selected
+                ? Theme.SelectedFill
+                : _hovered ? Theme.HoverOverlay : Brushes.Transparent;
+            _bar.Background = _selected || IsKeyboardFocused ? Theme.Accent : Brushes.Transparent;
+            _label.Foreground = _selected ? Theme.TextPrimary : Theme.TextSecondary;
         }
     }
 
@@ -461,7 +579,7 @@ namespace DiscordPresence
                 Width = 16,
                 Height = 16,
                 CornerRadius = new CornerRadius(8),
-                Background = Brushes.White,
+                Background = Theme.OnAccent,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(3, 0, 0, 0)

@@ -18,7 +18,11 @@ $refs = @(
     (Join-Path $gac "GAC_MSIL\PresentationFramework\v4.0_4.0.0.0__31bf3856ad364e35\PresentationFramework.dll"),
     (Join-Path $gac "GAC_32\PresentationCore\v4.0_4.0.0.0__31bf3856ad364e35\PresentationCore.dll"),
     (Join-Path $gac "GAC_MSIL\WindowsBase\v4.0_4.0.0.0__31bf3856ad364e35\WindowsBase.dll"),
-    (Join-Path $gac "GAC_MSIL\System.Xaml\v4.0_4.0.0.0__b77a5c561934e089\System.Xaml.dll")
+    (Join-Path $gac "GAC_MSIL\System.Xaml\v4.0_4.0.0.0__b77a5c561934e089\System.Xaml.dll"),
+    # The colour rails expose themselves as sliders to screen readers and
+    # automation, which needs the UIA provider interfaces.
+    (Join-Path $gac "GAC_MSIL\UIAutomationProvider\v4.0_4.0.0.0__31bf3856ad364e35\UIAutomationProvider.dll"),
+    (Join-Path $gac "GAC_MSIL\UIAutomationTypes\v4.0_4.0.0.0__31bf3856ad364e35\UIAutomationTypes.dll")
 )
 foreach ($ref in $refs) {
     if (-not (Test-Path $ref)) { throw "Missing framework assembly: $ref" }

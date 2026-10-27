@@ -12,3 +12,5 @@ discord-presence-error.log
 
 # Local screenshot/test harness
 tools/previewtest/
+tools/exitprobe/
+tools/idleprobe/

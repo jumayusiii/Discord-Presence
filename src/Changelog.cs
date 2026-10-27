@@ -25,6 +25,21 @@ namespace DiscordPresence
     {
         public static readonly ChangelogEntry[] Entries = new[]
         {
+            new ChangelogEntry("1.4.0", "October 27, 2026",
+                "Appearance moved out of the header and into Settings \u2192 Appearance, as a Dark row and a Light row.",
+                "Beta: Custom theme \u2014 pick your own surface, accent and text colours from a swatch palette, a hex code or one slider per channel.",
+                "The accent colour now reaches everything the theme paints: primary buttons, focus rings, carets, text selections, switch knobs and the ambient glow.",
+                "Custom colours are saved in the portable settings file, so the app reopens in exactly the theme you left it in."),
+            new ChangelogEntry("1.3.0", "October 27, 2026",
+                "Beta: Idle pause \u2014 five minutes without input clears the presence, and it returns within seconds of your next keyboard or mouse input.",
+                "Beta: Remember window size \u2014 the app reopens at the size and position it had when you last closed it.",
+                "Beta: Start with Windows \u2014 one switch adds the app to your Windows startup apps, so it is waiting in the tray after you sign in.",
+                "The About section now reports the runtime, your Windows build, the live Discord and presence state, the folders the app uses, and links to the project.",
+                "The settings pane keeps one height, so a long section scrolls inside itself instead of stretching the dialog."),
+            new ChangelogEntry("1.2.2", "October 27, 2026",
+                "The Changelog board opens on the newest release only, with an Older updates button that reveals the archive in place.",
+                "Settings is now a two-pane window like Discord's: a section rail on the left, one short section at a time on the right.",
+                "Version and build date moved into the new About section, and both boards got roomier spacing."),
             new ChangelogEntry("1.2.1", "October 27, 2026",
                 "The header buttons dropped their emoji: Changelog, Dark/Light and Settings are now flat, minimal pills.",
                 "The unseen-release count now sits inside the Changelog pill, right after its label.",

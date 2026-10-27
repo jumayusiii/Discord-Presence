@@ -29,16 +29,19 @@ notched into their outlines, so each label and input reads as one control.
   fades
 - **Settings** for the Discord Application ID, auto-update, and close-to-tray
   behavior
-- **Dark/Light** header pill for appearance, with a soft accent flash when
-  switched
+- **Dark** and **Light** built-in themes in **Settings → Appearance**, with a
+  soft accent flash when switched
+- Beta **custom theme**: pick your own surface, accent and text colours from a
+  swatch palette, a hex code or one rail per RGB channel, with a contrast guard
+  for unreadable combinations
 - Header controls shaped like Discord's connection status: flat, borderless
-  pills for appearance, the changelog and settings, lined up beside the status
-  chip
+  pills for the changelog and settings, lined up beside the status chip
 - Emoji glyphs on the four activity-type chips
 - **Changelog** board in the header, with a Discord-style count badge for
   unseen releases
 - **Beta** features in their own Settings section, each with a BETA badge:
-  a performance mode, an elapsed timer and a summon hotkey
+  a performance mode, an elapsed timer, a summon hotkey, idle pause,
+  remembered window geometry and a start-with-Windows switch
 - Rounded window corners
 - Automatic reconnect after Discord restarts
 - **Clear** action to remove the presence
@@ -87,23 +90,53 @@ like the real popout. Discord itself never shows the buttons on your own card.
 
 ## Appearance
 
-The header pill reads **Dark** in dark mode (`#1e2124` surface, `#7289da`
-accent, white text) and **Light** in light mode. Click it to switch instantly;
-the pill picks up the accent colour and settles back to its resting tint. The
-choice is saved in the portable settings file. The appearance control is kept in
-the header, separate from the editor settings. **Reduce motion** skips the
-flash.
+Appearance lives in **Settings → Appearance**. **Dark** is the surface this app
+was designed on (`#1e2124` surface, `#7289da` accent, white text); **Light** is
+the same layout on a bright surface. Picking one applies it instantly and the
+row flashes with the accent colour, so a switch is visible even when the two
+themes look similar. **Reduce motion** skips the flash, and the choice is saved
+in the portable settings file.
 
-![Light appearance with the Light pill in the header](assets/light.png)
+![Light appearance](assets/light.png)
+
+### Custom theme (BETA)
+
+The **Custom theme** switch unlocks three anchors: **Surface**, **Accent** and
+**Text colour**. Every panel, card, border, field, hover shade, switch, focus
+ring and the ambient glow is toned from them, so the whole app follows your
+colours. The stock Discord dark theme is exactly what this maths produces from
+its own three anchors, so the built-in themes are the same code path.
+
+- Pick a colour from the 36-swatch palette, type a hex code, or set it one
+  channel at a time on the **R**, **G** and **B** rails. Every control applies
+  live; the **Presence preview** strip above the palette shows the result before
+  you leave the section.
+- The derived tones follow the surface: a dark surface gets lighter cards,
+  borders and field outlines, and a light surface gets darker ones, with the
+  accent blending into the selected rows.
+- A light surface with a white text colour would be unreadable, so the picker
+  warns **Hard to read** with the measured contrast ratio and a **Fix contrast**
+  button that swaps in whichever of white or near-black actually reads on the
+  chosen surface. Aim for 4.5:1 or better.
+- **Built-in colours** copies the stock Discord colours of the current light or
+  dark base into the three anchors, so you can start over without leaving the
+  picker.
+
+![The custom theme picker with a red accent and the channel rails](assets/appearance.png)
+
+The three colours, and whether the custom theme is on, are saved in the same
+portable `discord-presence.json`. Choosing **Dark** or **Light** leaves the
+custom theme but keeps your colours, so switching it back on restores exactly
+the theme you built.
 
 ## Beta features
 
-Three optional features sit in their own **Beta** section at the bottom of
-Settings, each carrying a BETA badge. They are tested and usable, but their
-behaviour can still change in a later release. All three are off until you
-switch them on.
+Six optional features sit together in the **Beta** section of Settings, each
+carrying a BETA badge, and the **Custom theme** switch in the Appearance section
+is marked the same way. They are tested and usable, but their behaviour can
+still change in a later release. All of them are off until you switch them on.
 
-![Beta features in Settings](assets/beta.png)
+![The beta section, scrolled to the features added in 1.3.0](assets/beta.png)
 
 - **Performance mode** drops the blur behind every card and the glow behind the
   update button, batches the live preview into one redraw per frame instead of
@@ -122,27 +155,52 @@ switch them on.
 - **Summon hotkey** registers **Ctrl+Alt+D** system-wide: press it to hide the
   window to the tray, press it again to bring it back. If another app already
   owns that combination, the app says so and leaves the hotkey off.
+- **Idle pause** clears the presence after five minutes without keyboard or
+  mouse input anywhere in Windows, so an empty chair does not read as
+  "playing", and publishes the same activity again within seconds of your next
+  input. The check runs every five seconds.
+  The status chip reads **Idle** while it is paused, and the About section says
+  **Paused while idle**. Only a presence that is actually published is paused,
+  and a publish that lands while the app is idle ends the pause immediately.
+- **Remember window size** reopens the window at the size and position it had
+  when you last closed it, clamped to the current desktop so a window saved on
+  a monitor that is no longer attached still comes back on screen.
+- **Start with Windows** adds one entry to your own startup apps
+  (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`) pointing at the exe,
+  so the app is already waiting in the tray after you sign in. Turning it off
+  removes the entry again, and a portable copy that is moved gets the entry
+  rewritten with its new path on the next launch. No administrator rights and
+  no scheduled task are involved.
 
 ## Settings
 
-The gear button in the header opens the settings dialog. Changes apply and save
-as soon as you pick them.
+The gear button in the header opens the settings dialog. It is a two-pane
+window: a section rail on the left, and one short section at a time on the
+right, with the **Done** button pinned below both. Changes apply and save as
+soon as you pick them.
 
 - **Connection**
   - **Application ID** - the Discord application that publishes the presence.
     Create a free application in the Developer Portal, copy its Application
     ID, and paste it here. The link in the section opens the portal.
-- **When you close the window**
+- **Window**
   - **Quit the app** - the close button stops the presence and exits.
   - **Keep running in the tray** - the close button hides the window instead.
     A Discord icon appears in the notification area; double-click it (or use
     its **Open Discord Presence** menu item) to bring the window back, and
     **Quit** there to really exit. The first time it hides, a notification
     explains where the app went.
+- **Appearance**
+  - **Dark** and **Light** - the two built-in themes, with the accent flash
+    described in [Appearance](#appearance).
+  - **Custom theme** (BETA) - your own surface, accent and text colours, with a
+    palette, a hex field, one rail per channel and a contrast guard. See
+    [Custom theme](#custom-theme-beta).
 - **Motion**
   - **Reduce motion** - turns off the launch animation and the content fades.
-    The app then opens, restores, hides, and closes instantly.
-- **Presence updates**
+    The app then opens, restores, hides, and closes instantly, and the
+    appearance flash is skipped.
+- **Updates**
   - **Update automatically** - edits, activity-type switches, Application ID
     changes and preset loads are published after a short pause (about 0.7 s,
     or 0.25 s in performance mode) instead of waiting for **Update presence**.
@@ -153,24 +211,35 @@ as soon as you pick them.
     automatically (or as soon as Discord becomes available), and an explicit
     **Clear** stays cleared until you edit something.
 - **Beta**
-  - **Performance mode**, **Elapsed timer** and **Summon hotkey** - see
+  - **Performance mode**, **Elapsed timer**, **Summon hotkey**, **Idle pause**,
+    **Remember window size** and **Start with Windows** - see
     [Beta features](#beta-features). **Restart timer** sits under the elapsed
     timer row and is enabled while that feature is on.
+- **About**
+  - What the app is, the build you are running (version, build date, runtime
+    and Windows release), the **live** state of this session (Discord
+    connection, whether a presence is published, the Application ID in use and
+    how many presets are saved), the two file paths the app uses, and links to
+    the project. **Open app folder** shows the folder the portable exe runs
+    from.
+
+![The About section](assets/about.png)
 
 Every choice is remembered in the portable settings file and applied on the
-next launch, including the welcome screen. The version line at the bottom of
-the dialog identifies the installed build; the date after **Built** is stamped
-into the exe by `build.ps1` at compile time. This release is **1.2.1**.
+next launch, including the welcome screen. The date after **Built** in the
+About section is stamped into the exe by `build.ps1` at compile time. This
+release is **1.3.0**.
 
 ![Settings dialog](assets/settings.png)
 
 ## Changelog
 
-The note-board button in the header opens the built-in **Changelog**. Every
-release adds a short entry with its version, date, and a few highlights. A red
-count badge shows how many releases you have not opened yet; opening the board
-clears it and remembers the newest version in the portable settings file, so
-the count does not return for releases you have already read.
+The note-board button in the header opens the built-in **Changelog**. It opens
+on the newest release alone, with its version, date, and a few highlights, and
+**Older updates** reveals the archive of earlier releases in place. A red count
+badge shows how many releases you have not opened yet; opening the board clears
+it and remembers the newest version in the portable settings file, so the count
+does not return for releases you have already read.
 
 The board ships inside the exe and needs no network connection. Add the next
 entry at the top of `src/Changelog.cs` and bump the assembly version for each
@@ -235,7 +304,9 @@ name, rename the application in the Developer Portal to the name you want.
 
 Settings and presets are saved as `discord-presence.json` next to the executable,
 so the app stays portable. If that folder is read-only, it falls back to
-`%LOCALAPPDATA%\DiscordPresence\discord-presence.json`.
+`%LOCALAPPDATA%\DiscordPresence\discord-presence.json`. The About section shows
+which of the two files is in use, and **Start with Windows** (beta) is the only
+setting that writes outside it, as a single per-user startup entry.
 
 ## Build from source
 

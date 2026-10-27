@@ -1,0 +1,14 @@
+# Build output
+dist/
+*.exe
+
+# Generated at compile time by build.ps1
+src/BuildInfo.cs
+
+# Portable settings files and runtime logs
+discord-presence.json
+discord-presence.backup.json
+discord-presence-error.log
+
+# Local screenshot/test harness
+tools/previewtest/

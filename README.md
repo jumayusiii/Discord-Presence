@@ -31,9 +31,13 @@ notched into their outlines, so each label and input reads as one control.
   behavior
 - Glowing **moon/sun** header toggle for dark and light appearance, with a
   soft pulse when switched
-- Emoji icons for the header controls and the four activity types
+- Header controls shaped like Discord's connection status: labelled pills for
+  the moon/sun, the changelog and settings, lined up beside the status chip
+- Emoji glyphs inside the header pills and the four activity-type chips
 - **Changelog** board in the header, with a Discord-style count badge for
   unseen releases
+- **Beta** features in their own Settings section, each with a BETA badge:
+  a performance mode, an elapsed timer and a summon hotkey
 - Rounded window corners
 - Automatic reconnect after Discord restarts
 - **Clear** action to remove the presence
@@ -90,6 +94,33 @@ separate from the editor settings. **Reduce motion** skips the bloom.
 
 ![Light appearance with the glowing sun](assets/light.png)
 
+## Beta features
+
+Three optional features sit in their own **Beta** section at the bottom of
+Settings, each carrying a BETA badge. They are tested and usable, but their
+behaviour can still change in a later release. All three are off until you
+switch them on.
+
+![Beta features in Settings](assets/beta.png)
+
+- **Performance mode** drops the blur behind every card, the glow behind the
+  update button and the halo of the moon/sun, batches the live preview into one
+  redraw per frame instead of one per edit, skips preview work while the window
+  is hidden, and shortens the auto-update pause from 0.7 s to 0.25 s. In a
+  scripted test on this machine (150 edits into the Details field, twice per
+  mode) the round trip dropped from ~965 ms to ~740 ms, and the process used
+  about 35% less CPU per edit: 1109 and 1234 ms without it, 797 and 750 ms
+  with it. The UI thread spends its time on clicks and typing instead of
+  repainting blurs, which is what makes the editor feel quicker.
+- **Elapsed timer** publishes `timestamps.start` with the activity, so Discord
+  counts how long the presence has been up. The clock starts with the first
+  publish after you switch it on and keeps running across restarts;
+  **Restart timer** starts it over, and **Clear** resets it. The live preview
+  shows the same counter.
+- **Summon hotkey** registers **Ctrl+Alt+D** system-wide: press it to hide the
+  window to the tray, press it again to bring it back. If another app already
+  owns that combination, the app says so and leaves the hotkey off.
+
 ## Settings
 
 The gear button in the header opens the settings dialog. Changes apply and save
@@ -111,19 +142,23 @@ as soon as you pick them.
     The app then opens, restores, hides, and closes instantly.
 - **Presence updates**
   - **Update automatically** - edits, activity-type switches, Application ID
-    changes and preset loads are published after a short pause (about 0.7 s)
-    instead of waiting for **Update presence**. A burst of typing publishes
-    once. Invalid or incomplete values are skipped quietly until they are
-    usable, and auto-publishes never raise a toast; the status chip shows
-    **Updating** briefly while Discord receives the new activity. With this on,
-    launching the app publishes the saved setup automatically (or as soon as
-    Discord becomes available), and an explicit **Clear** stays cleared until
-    you edit something.
+    changes and preset loads are published after a short pause (about 0.7 s,
+    or 0.25 s in performance mode) instead of waiting for **Update presence**.
+    A burst of typing publishes once. Invalid or incomplete values are skipped
+    quietly until they are usable, and auto-publishes never raise a toast; the
+    status chip shows **Updating** briefly while Discord receives the new
+    activity. With this on, launching the app publishes the saved setup
+    automatically (or as soon as Discord becomes available), and an explicit
+    **Clear** stays cleared until you edit something.
+- **Beta**
+  - **Performance mode**, **Elapsed timer** and **Summon hotkey** - see
+    [Beta features](#beta-features). **Restart timer** sits under the elapsed
+    timer row and is enabled while that feature is on.
 
 Every choice is remembered in the portable settings file and applied on the
 next launch, including the welcome screen. The version line at the bottom of
 the dialog identifies the installed build; the date after **Built** is stamped
-into the exe by `build.ps1` at compile time. This release is **1.1.7**.
+into the exe by `build.ps1` at compile time. This release is **1.2.0**.
 
 ![Settings dialog](assets/settings.png)
 
@@ -230,6 +265,12 @@ every release.
   all of these and shows the editor immediately.
 - This is an unsigned local build. Windows SmartScreen may show a warning; use
   **More info → Run anyway** if you trust the file.
+- The four soft card shadows, the glow behind **Update presence** and the
+  moon/sun halo are WPF blur effects. **Performance mode** turns all of them
+  off; that is where most of its responsiveness gain comes from.
+- The summon hotkey needs a free **Ctrl+Alt+D**. Windows reports a conflict
+  when another program already registered it, and the app then shows a note
+  and leaves the hotkey off.
 - Closing the app removes its presence from Discord.
 - Discord and the Discord logo are trademarks of Discord Inc. This is an
   unofficial, personal-use tool.

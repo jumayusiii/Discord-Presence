@@ -25,6 +25,12 @@ namespace DiscordPresence
     {
         public static readonly ChangelogEntry[] Entries = new[]
         {
+            new ChangelogEntry("1.2.0", "October 27, 2026",
+                "Beta: Performance mode \u2014 flat surfaces instead of blur effects, preview redraws batched to a single frame, and auto-updates three times sooner.",
+                "Beta: Elapsed timer \u2014 Discord counts how long the presence has been up, with a Restart timer action.",
+                "Beta: Summon hotkey \u2014 Ctrl+Alt+D hides the window to the tray or brings it back from anywhere in Windows.",
+                "The header controls are now Discord-style pills beside the connection status, each with a label.",
+                "Beta features live in their own Settings section and carry a BETA badge."),
             new ChangelogEntry("1.1.7", "October 26, 2026",
                 "Header and activity glyphs now use the requested emoji icons."),
             new ChangelogEntry("1.1.6", "October 26, 2026",

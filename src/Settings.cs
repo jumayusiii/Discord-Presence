@@ -116,6 +116,10 @@ namespace DiscordPresence
         public bool LightMode { get; set; }
         public bool AutoUpdate { get; set; }
         public bool ReduceMotion { get; set; }
+        public bool PerformanceMode { get; set; }
+        public bool ShowElapsed { get; set; }
+        public bool SummonHotkey { get; set; }
+        public long ElapsedStart { get; set; }
         public string LastSeenChangelog { get; set; }
 
         public AppSettings()
@@ -159,6 +163,10 @@ namespace DiscordPresence
                 LightMode = LightMode,
                 AutoUpdate = AutoUpdate,
                 ReduceMotion = ReduceMotion,
+                PerformanceMode = PerformanceMode,
+                ShowElapsed = ShowElapsed,
+                SummonHotkey = SummonHotkey,
+                ElapsedStart = ElapsedStart,
                 LastSeenChangelog = LastSeenChangelog
             };
             foreach (PresencePreset preset in Presets)
@@ -184,6 +192,10 @@ namespace DiscordPresence
             Button1Url = Cut(Button1Url, 2048);
             Button2Url = Cut(Button2Url, 2048);
             LastSeenChangelog = Cut(LastSeenChangelog, 32);
+            if (ElapsedStart < 0)
+            {
+                ElapsedStart = 0;
+            }
             if (ActivityType < 0 || ActivityType > 3)
             {
                 ActivityType = 0;

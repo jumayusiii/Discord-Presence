@@ -78,6 +78,13 @@ namespace DiscordPresence
         private DispatcherTimer _autoUpdateTimer;
         private ToggleRow _autoUpdateRow;
         private ToggleRow _reduceMotionRow;
+        private ToggleRow _performanceRow;
+        private ToggleRow _elapsedRow;
+        private ToggleRow _hotkeyRow;
+        private Button _restartTimerButton;
+        private TextBlock _appearanceLabel;
+        private bool _previewDirty;
+        private bool _hotkeyRegistered;
         private WindowChrome _savedChrome;
         private bool _closeAnimationStarted;
         private bool _suppressRestoreAnimation;
@@ -95,6 +102,12 @@ namespace DiscordPresence
         private const int ScMinimize = 0xF020;
         private const int ScRestore = 0xF120;
         private const int CornerRadiusDip = 12;
+        private const int PreviewFrameDelay = 16;
+        private const int PreviewSettleDelay = 120;
+        private const int WmHotkey = 0x0312;
+        private const int SummonHotkeyId = 0x4D50;
+        private const int HotkeyModifiers = 0x0001 | 0x0002 | 0x4000; // Alt + Ctrl + NoRepeat
+        private const int HotkeyVirtualKey = 0x44; // D
         private static readonly bool UsesDwmCorners = Environment.OSVersion.Version.Build >= 22000;
 
         private ActivityKind _kind = ActivityKind.Playing;
@@ -113,6 +126,9 @@ namespace DiscordPresence
             _settings = SettingsStore.Load();
             _presets = _settings.Presets ?? new List<PresencePreset>();
             Theme.Apply(_settings.LightMode ? Theme.Appearance.Light : Theme.Appearance.Dark);
+            // The cards and buttons below ask the theme for their shadows, so
+            // the performance profile has to be in place before they exist.
+            Theme.SetPerformanceMode(_settings.PerformanceMode);
 
             Title = "Discord Presence";
             WindowStyle = WindowStyle.None;
@@ -171,7 +187,11 @@ namespace DiscordPresence
             _autoUpdateTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
             _autoUpdateTimer.Tick += OnAutoUpdateTick;
 
-            _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
+            _previewTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(
+                    _settings.PerformanceMode ? PreviewFrameDelay : PreviewSettleDelay)
+            };
             _previewTimer.Tick += delegate
             {
                 _previewTimer.Stop();
@@ -351,8 +371,8 @@ namespace DiscordPresence
             };
             AutomationProperties.SetName(statusChip, "Discord connection status");
 
-            Grid changelogContent = new Grid { Width = 30, Height = 30 };
-            TextBlock changelogGlyph = Theme.Emoji("\uD83D\uDCDD", 15.5);
+            Grid changelogContent = new Grid { Width = 20, Height = 20 };
+            TextBlock changelogGlyph = Theme.Emoji("\uD83D\uDCDD", 14.5);
             changelogContent.Children.Add(changelogGlyph);
 
             _changelogBadgeText = Theme.Text("0", 9, FontWeights.Bold, Brushes.White);
@@ -362,8 +382,8 @@ namespace DiscordPresence
 
             _changelogBadge = new Border
             {
-                MinWidth = 16,
-                Height = 16,
+                MinWidth = 15,
+                Height = 15,
                 CornerRadius = new CornerRadius(8),
                 Background = Theme.Danger,
                 BorderBrush = Theme.Surface,
@@ -377,12 +397,12 @@ namespace DiscordPresence
             };
             changelogContent.Children.Add(_changelogBadge);
 
-            Grid appearanceContent = new Grid { Width = 30, Height = 30 };
+            Grid appearanceContent = new Grid { Width = 20, Height = 20 };
             _appearanceHaloScale = new ScaleTransform(1, 1);
             _appearanceHalo = new Ellipse
             {
-                Width = 28,
-                Height = 28,
+                Width = 24,
+                Height = 24,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 RenderTransformOrigin = new Point(0.5, 0.5),
@@ -391,56 +411,29 @@ namespace DiscordPresence
             };
             appearanceContent.Children.Add(_appearanceHalo);
 
-            _appearanceGlyph = Theme.Emoji("\uD83C\uDF19", 15.5);
+            _appearanceGlyph = Theme.Emoji("\uD83C\uDF19", 14.5);
             _appearanceGlow = new DropShadowEffect
             {
                 ShadowDepth = 0,
                 BlurRadius = 8,
                 RenderingBias = RenderingBias.Performance
             };
-            _appearanceGlyph.Effect = _appearanceGlow;
+            Theme.Elevate(_appearanceGlyph, _appearanceGlow);
             appearanceContent.Children.Add(_appearanceGlyph);
 
-            _appearanceButton = new Button
-            {
-                Style = Theme.FindStyle("GhostButton"),
-                Content = appearanceContent,
-                Width = 30,
-                Height = 30,
-                Padding = new Thickness(0),
-                Margin = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            AutomationProperties.SetName(_appearanceButton, "Appearance");
+            // Every header control is a Discord-style status pill: surface,
+            // outline, glyph and label, exactly like the connection chip.
+            _appearanceButton = Theme.Pill(appearanceContent, "Dark", "Appearance", out _appearanceLabel);
             _appearanceButton.Click += delegate { SetLightMode(!_settings.LightMode); };
             RefreshAppearanceButton();
 
-            Button changelogButton = new Button
-            {
-                Style = Theme.FindStyle("GhostButton"),
-                Content = changelogContent,
-                Width = 30,
-                Height = 30,
-                Padding = new Thickness(0),
-                Margin = new Thickness(0, 0, 6, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = "Changelog"
-            };
-            AutomationProperties.SetName(changelogButton, "Changelog");
+            Button changelogButton = Theme.Pill(changelogContent, "Changelog",
+                "Release notes and recent changes");
             AutomationProperties.SetHelpText(changelogButton, "Release notes and recent changes");
             changelogButton.Click += delegate { ShowChangelogDialog(); };
 
-            Button settingsButton = new Button
-            {
-                Style = Theme.FindStyle("GhostButton"),
-                Content = Theme.Emoji("\u2699\uFE0F", 15.5),
-                Width = 30,
-                Height = 30,
-                Padding = new Thickness(0),
-                VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = "Settings"
-            };
-            AutomationProperties.SetName(settingsButton, "Settings");
+            Button settingsButton = Theme.Pill(Theme.Emoji("\u2699\uFE0F", 14.5), "Settings",
+                "Application ID, publishing, tray options and beta features");
             settingsButton.Click += delegate { ShowSettingsDialog(); };
 
             StackPanel statusGroup = new StackPanel
@@ -718,7 +711,15 @@ namespace DiscordPresence
 
         private IntPtr OnWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WmSysCommand)
+            if (msg == WmHotkey)
+            {
+                if (wParam.ToInt32() == SummonHotkeyId)
+                {
+                    ToggleSummon();
+                    handled = true;
+                }
+            }
+            else if (msg == WmSysCommand)
             {
                 int command = wParam.ToInt32() & 0xFFF0;
                 if (command == ScMinimize && _savedChrome == null && WindowState != WindowState.Minimized)
@@ -1276,6 +1277,11 @@ namespace DiscordPresence
             _appearanceGlow.Opacity = 0.95;
             _appearanceHalo.Fill = BuildGlowHalo(glow, light ? (byte)0x52 : (byte)0x68);
 
+            if (_appearanceLabel != null)
+            {
+                _appearanceLabel.Text = light ? "Light" : "Dark";
+            }
+
             string action = light ? "Switch to dark mode" : "Switch to light mode";
             _appearanceButton.ToolTip = action;
             AutomationProperties.SetHelpText(_appearanceButton, action);
@@ -1486,6 +1492,26 @@ namespace DiscordPresence
             _reduceMotionRow = new ToggleRow("\uE769", "Reduce motion",
                 "Turn off the launch animation and editor fades.");
             _reduceMotionRow.Toggled += delegate { SetReduceMotion(_reduceMotionRow.IsOn); };
+
+            _performanceRow = new ToggleRow("\uE945", "Performance mode",
+                "Drop the blur effects, batch preview redraws to one frame, and auto-update about three times sooner. Aimed at slower machines and heavy artwork.", true);
+            _performanceRow.Toggled += delegate { SetPerformanceMode(_performanceRow.IsOn); };
+            _elapsedRow = new ToggleRow("\uE916", "Elapsed timer",
+                "Let Discord count how long the presence has been up. The clock starts with the next publish and resets with Clear.", true);
+            _elapsedRow.Toggled += delegate { SetElapsed(_elapsedRow.IsOn); };
+            _hotkeyRow = new ToggleRow("\uE765", "Summon hotkey",
+                "Press Ctrl+Alt+D anywhere in Windows to hide the window to the tray or bring it back.", true);
+            _hotkeyRow.Toggled += delegate { SetSummonHotkey(_hotkeyRow.IsOn); };
+
+            _restartTimerButton = Theme.MakeButton("Restart timer", null, "OutlineButton");
+            _restartTimerButton.Height = 32;
+            _restartTimerButton.MinWidth = 0;
+            _restartTimerButton.Padding = new Thickness(13, 0, 13, 0);
+            _restartTimerButton.HorizontalAlignment = HorizontalAlignment.Left;
+            _restartTimerButton.ToolTip = "Start the elapsed clock again from zero";
+            AutomationProperties.SetName(_restartTimerButton, "Restart timer");
+            _restartTimerButton.Click += delegate { RestartElapsedTimer(); };
+
             RefreshSettingsTiles();
 
             Button done = Theme.MakeButton("Done", null, "PrimaryButton");
@@ -1517,7 +1543,7 @@ namespace DiscordPresence
             StackPanel content = new StackPanel();
             content.Children.Add(Theme.Text("Settings", 18, FontWeights.SemiBold, Theme.TextPrimary));
             TextBlock description = Theme.Text(
-                "Set the Discord application behind the presence, then choose how updates are published and what the close button does.",
+                "Set the Discord application behind the presence, then choose how updates are published and what the close button does. Preview features sit at the bottom and are marked BETA.",
                 11.5, FontWeights.Normal, Theme.TextMuted);
             description.TextWrapping = TextWrapping.Wrap;
             description.TextTrimming = TextTrimming.None;
@@ -1572,6 +1598,29 @@ namespace DiscordPresence
             content.Children.Add(publishCaption);
             content.Children.Add(_autoUpdateRow);
 
+            TextBlock betaCaption = Theme.Text("Beta", 11.5,
+                FontWeights.SemiBold, Theme.TextSecondary);
+            betaCaption.Margin = new Thickness(1, 20, 0, 0);
+            content.Children.Add(betaCaption);
+
+            TextBlock betaHint = Theme.Text(
+                "Preview features. They are tested and usable, but their behaviour can still change in a later release.",
+                10.5, FontWeights.Normal, Theme.TextMuted);
+            betaHint.TextWrapping = TextWrapping.Wrap;
+            betaHint.TextTrimming = TextTrimming.None;
+            betaHint.Margin = new Thickness(1, 4, 0, 8);
+            content.Children.Add(betaHint);
+
+            _performanceRow.Margin = new Thickness(0, 0, 0, 8);
+            content.Children.Add(_performanceRow);
+
+            _elapsedRow.Margin = new Thickness(0, 0, 0, 8);
+            content.Children.Add(_elapsedRow);
+            content.Children.Add(_restartTimerButton);
+
+            _hotkeyRow.Margin = new Thickness(0, 6, 0, 2);
+            content.Children.Add(_hotkeyRow);
+
             content.Children.Add(footer);
 
             OpenModal(content);
@@ -1604,6 +1653,22 @@ namespace DiscordPresence
             if (_reduceMotionRow != null)
             {
                 _reduceMotionRow.SetOn(_settings.ReduceMotion);
+            }
+            if (_performanceRow != null)
+            {
+                _performanceRow.SetOn(_settings.PerformanceMode);
+            }
+            if (_elapsedRow != null)
+            {
+                _elapsedRow.SetOn(_settings.ShowElapsed);
+            }
+            if (_hotkeyRow != null)
+            {
+                _hotkeyRow.SetOn(_settings.SummonHotkey);
+            }
+            if (_restartTimerButton != null)
+            {
+                _restartTimerButton.IsEnabled = _settings.ShowElapsed;
             }
         }
 
@@ -1672,6 +1737,136 @@ namespace DiscordPresence
                 _restoreFadeRunning = false;
                 ShowContentImmediately();
                 SetDwmTransitions(true);
+            }
+        }
+
+        /// <summary>
+        /// Performance mode drops the blur effects, coalesces preview redraws to
+        /// a single frame and shortens the auto-publish delay.
+        /// </summary>
+        private void SetPerformanceMode(bool value)
+        {
+            if (_settings.PerformanceMode == value)
+            {
+                return;
+            }
+            _settings.PerformanceMode = value;
+            ApplyPerformanceProfile();
+            SettingsStore.Save(CollectSettings());
+            RefreshSettingsTiles();
+            ShowSnackbar(value
+                ? "Performance mode on: flat surfaces, previews batched to one frame, faster auto-updates."
+                : "Performance mode off.", SnackbarKind.Info);
+        }
+
+        private void ApplyPerformanceProfile()
+        {
+            Theme.SetPerformanceMode(_settings.PerformanceMode);
+            if (_previewTimer != null)
+            {
+                _previewTimer.Interval = TimeSpan.FromMilliseconds(
+                    _settings.PerformanceMode ? PreviewFrameDelay : PreviewSettleDelay);
+            }
+        }
+
+        private void SetElapsed(bool value)
+        {
+            if (_settings.ShowElapsed == value)
+            {
+                return;
+            }
+            _settings.ShowElapsed = value;
+            _settings.ElapsedStart = value
+                ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                : 0;
+            SettingsStore.Save(CollectSettings());
+            RefreshSettingsTiles();
+            RefreshPreview();
+            ScheduleAutoUpdate();
+            ShowSnackbar(value
+                ? (_settings.AutoUpdate
+                    ? "Elapsed timer on. Discord starts counting with the next publish."
+                    : "Elapsed timer on. Update presence to publish it.")
+                : "Elapsed timer off.", SnackbarKind.Info);
+        }
+
+        private void RestartElapsedTimer()
+        {
+            _settings.ElapsedStart = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            SettingsStore.Save(CollectSettings());
+            RefreshPreview();
+            RefreshSettingsTiles();
+            ScheduleAutoUpdate();
+            ShowSnackbar(_settings.AutoUpdate
+                ? "Timer restarted. Auto-update republishes it in a moment."
+                : "Timer restarted. Update presence to publish it.", SnackbarKind.Info);
+        }
+
+        /// <summary>Starts the Discord clock the first time a presence goes out.</summary>
+        private long EnsureElapsedStart()
+        {
+            if (!_settings.ShowElapsed)
+            {
+                return 0;
+            }
+            if (_settings.ElapsedStart <= 0)
+            {
+                _settings.ElapsedStart = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            }
+            return _settings.ElapsedStart;
+        }
+
+        private void SetSummonHotkey(bool value)
+        {
+            if (_settings.SummonHotkey == value)
+            {
+                return;
+            }
+            _settings.SummonHotkey = value;
+            SettingsStore.Save(CollectSettings());
+            RefreshSettingsTiles();
+            ApplyHotkey();
+            ShowSnackbar(value
+                ? (_hotkeyRegistered
+                    ? "Press Ctrl+Alt+D anywhere in Windows to hide or summon the window."
+                    : "Ctrl+Alt+D is already used by another app, so the hotkey stays off.")
+                : "Summon hotkey off.", SnackbarKind.Info);
+        }
+
+        private void ApplyHotkey()
+        {
+            ReleaseHotkey();
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero || !_settings.SummonHotkey)
+            {
+                return;
+            }
+            _hotkeyRegistered = RegisterHotKey(handle, SummonHotkeyId, HotkeyModifiers, HotkeyVirtualKey);
+        }
+
+        private void ReleaseHotkey()
+        {
+            if (!_hotkeyRegistered)
+            {
+                return;
+            }
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            if (handle != IntPtr.Zero)
+            {
+                UnregisterHotKey(handle, SummonHotkeyId);
+            }
+            _hotkeyRegistered = false;
+        }
+
+        private void ToggleSummon()
+        {
+            if (IsVisible && WindowState != WindowState.Minimized)
+            {
+                HideToTray();
+            }
+            else
+            {
+                RestoreFromTray();
             }
         }
 
@@ -1816,6 +2011,7 @@ namespace DiscordPresence
             Topmost = false;
             ApplyWindowRegion();
             PlayRestoreAnimation();
+            FlushPreviewIfDirty();
         }
 
         private void ExitFromTray()
@@ -1901,17 +2097,17 @@ namespace DiscordPresence
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(16),
                 Padding = new Thickness(22, 20, 22, 20),
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                Effect = new DropShadowEffect
-                {
-                    Color = Colors.Black,
-                    BlurRadius = 36,
-                    ShadowDepth = 10,
-                    Direction = 270,
-                    Opacity = 0.55,
-                    RenderingBias = RenderingBias.Performance
-                }
+                RenderTransformOrigin = new Point(0.5, 0.5)
             };
+            Theme.Elevate(_modalCard, new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 36,
+                ShadowDepth = 10,
+                Direction = 270,
+                Opacity = 0.55,
+                RenderingBias = RenderingBias.Performance
+            });
             KeyboardNavigation.SetTabNavigation(_modalCard, KeyboardNavigationMode.Cycle);
             layer.Children.Add(_modalCard);
 
@@ -2143,13 +2339,13 @@ namespace DiscordPresence
             _updateButton.Height = 42;
             _updateButton.IsDefault = true;
             _updateButton.Margin = new Thickness(10, 0, 0, 0);
-            _updateButton.Effect = new DropShadowEffect
+            Theme.Elevate(_updateButton, new DropShadowEffect
             {
                 Color = Theme.AccentColor,
                 BlurRadius = 16,
                 ShadowDepth = 0,
                 Opacity = 0.32
-            };
+            });
             _updateButton.ToolTip = "Publish this activity to Discord";
             AutomationProperties.SetName(_updateButton, "Update presence");
             _updateButton.Click += OnUpdateClicked;
@@ -2219,8 +2415,23 @@ namespace DiscordPresence
                 RefreshPreview();
                 return;
             }
+            if (_closing || !IsVisible || WindowState == WindowState.Minimized)
+            {
+                // Nothing on screen needs repainting. The deferred refresh runs
+                // when the window comes back instead of burning frames here.
+                _previewDirty = true;
+                return;
+            }
             _previewTimer.Stop();
             _previewTimer.Start();
+        }
+
+        private void FlushPreviewIfDirty()
+        {
+            if (_previewDirty)
+            {
+                SchedulePreview();
+            }
         }
 
         /// <summary>Rebuilds the Discord-style card from the current fields.</summary>
@@ -2230,6 +2441,7 @@ namespace DiscordPresence
             {
                 return;
             }
+            _previewDirty = false;
 
             List<PreviewButton> buttons = new List<PreviewButton>();
             AddPreviewButton(buttons, _button1Label.Value, _button1Url.Value);
@@ -2237,7 +2449,7 @@ namespace DiscordPresence
 
             _preview.Update(_kind, _applicationId.Value, _gameName.Value, _details.Value, _state.Value,
                 _streamUrl.Value, _largeImage.Value, _largeText.Value, _smallImage.Value, _smallText.Value,
-                buttons);
+                buttons, _settings.ShowElapsed ? _settings.ElapsedStart : 0);
         }
 
         private static void AddPreviewButton(List<PreviewButton> buttons, string label, string url)
@@ -2402,6 +2614,7 @@ namespace DiscordPresence
                 {
                     PlayRestoreAnimation();
                 }
+                FlushPreviewIfDirty();
             }
 
             // WM_SIZE can arrive before the new state is visible to WPF.
@@ -2558,6 +2771,12 @@ namespace DiscordPresence
                     {
                         _lastPublished = activity;
                         SetStatus("Connected", Theme.Success);
+                        if (_settings.ShowElapsed)
+                        {
+                            // The publish may have started the clock, so the
+                            // preview counter has to catch up right away.
+                            RefreshPreview();
+                        }
                         if (!quiet)
                         {
                             string message = _kind == ActivityKind.Streaming
@@ -2659,6 +2878,11 @@ namespace DiscordPresence
                     {
                         _lastPublished = null;
                         _restoreSuppressed = true;
+                        // Clearing ends the session, so the next publish starts
+                        // the elapsed clock over.
+                        _settings.ElapsedStart = 0;
+                        SettingsStore.Save(CollectSettings());
+                        RefreshPreview();
                         ShowSnackbar("Presence cleared.", SnackbarKind.Success);
                     }
                     else
@@ -2827,6 +3051,16 @@ namespace DiscordPresence
                 activity["buttons"] = buttons;
             }
 
+            // Discord reads start/end as epoch milliseconds. The clock starts
+            // with the first publish, not while the fields are being edited.
+            long elapsed = EnsureElapsedStart();
+            if (elapsed > 0)
+            {
+                Dictionary<string, object> timestamps = new Dictionary<string, object>();
+                timestamps["start"] = elapsed;
+                activity["timestamps"] = timestamps;
+            }
+
             return activity;
         }
 
@@ -2971,6 +3205,10 @@ namespace DiscordPresence
                 LightMode = _settings.LightMode,
                 AutoUpdate = _settings.AutoUpdate,
                 ReduceMotion = _settings.ReduceMotion,
+                PerformanceMode = _settings.PerformanceMode,
+                ShowElapsed = _settings.ShowElapsed,
+                SummonHotkey = _settings.SummonHotkey,
+                ElapsedStart = _settings.ElapsedStart,
                 LastSeenChangelog = _settings.LastSeenChangelog
             };
         }
@@ -3063,6 +3301,7 @@ namespace DiscordPresence
             _exiting = true;
             _closing = true;
             DisposeTrayIcon();
+            ReleaseHotkey();
             _reconnectTimer.Stop();
             if (_minimizeTimer != null)
             {
@@ -3091,6 +3330,7 @@ namespace DiscordPresence
         {
             IntPtr handle = new WindowInteropHelper(this).Handle;
             ApplySystemTheme(handle);
+            ApplyHotkey();
 
             HwndSource source = HwndSource.FromHwnd(handle);
             if (source != null)
@@ -3147,5 +3387,11 @@ namespace DiscordPresence
 
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hwnd, int id, int modifiers, int key);
+
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hwnd, int id);
     }
 }

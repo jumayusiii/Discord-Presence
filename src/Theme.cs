@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Markup;
 using System.Windows.Media;
@@ -127,6 +129,47 @@ namespace DiscordPresence
     <Setter Property=""Foreground"" Value=""{DynamicResource TextSecondaryBrush}""/>
   </Style>
 
+  <Style x:Key=""PillButton"" TargetType=""Button"" BasedOn=""{StaticResource BaseButton}"">
+    <Setter Property=""Background"" Value=""{DynamicResource ChipFillBrush}""/>
+    <Setter Property=""BorderBrush"" Value=""{DynamicResource ChipBorderBrush}""/>
+    <Setter Property=""BorderThickness"" Value=""1""/>
+    <Setter Property=""Foreground"" Value=""{DynamicResource TextSecondaryBrush}""/>
+    <Setter Property=""Template"">
+      <Setter.Value>
+        <ControlTemplate TargetType=""Button"">
+          <Border x:Name=""Bd"" Background=""{TemplateBinding Background}""
+                  BorderBrush=""{TemplateBinding BorderBrush}""
+                  BorderThickness=""{TemplateBinding BorderThickness}""
+                  CornerRadius=""14"" SnapsToDevicePixels=""True"">
+            <Grid>
+              <ContentPresenter Margin=""{TemplateBinding Padding}""
+                                HorizontalAlignment=""Center"" VerticalAlignment=""Center""
+                                RecognizesAccessKey=""True""/>
+              <Border x:Name=""Hover"" Background=""{DynamicResource HoverOverlayBrush}"" CornerRadius=""14""
+                      Opacity=""0"" IsHitTestVisible=""False""/>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property=""IsMouseOver"" Value=""True"">
+              <Setter TargetName=""Bd"" Property=""BorderBrush"" Value=""{DynamicResource HoverBorderBrush}""/>
+              <Setter TargetName=""Hover"" Property=""Opacity"" Value=""1""/>
+            </Trigger>
+            <Trigger Property=""IsPressed"" Value=""True"">
+              <Setter TargetName=""Hover"" Property=""Background"" Value=""{DynamicResource HoverOverlayStrongBrush}""/>
+              <Setter TargetName=""Hover"" Property=""Opacity"" Value=""1""/>
+            </Trigger>
+            <Trigger Property=""IsKeyboardFocused"" Value=""True"">
+              <Setter TargetName=""Bd"" Property=""BorderBrush"" Value=""#7289DA""/>
+            </Trigger>
+            <Trigger Property=""IsEnabled"" Value=""False"">
+              <Setter Property=""Opacity"" Value=""0.45""/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style x:Key=""FieldTextBox"" TargetType=""TextBox"">
     <Setter Property=""Foreground"" Value=""{DynamicResource TextPrimaryBrush}""/>
     <Setter Property=""Background"" Value=""Transparent""/>
@@ -244,7 +287,9 @@ namespace DiscordPresence
             app.Resources["TextSecondaryBrush"] = StyleBrush(TextSecondary);
             app.Resources["InputBorderBrush"] = StyleBrush(InputBorder);
             app.Resources["ChipFillBrush"] = StyleBrush(ChipFill);
+            app.Resources["ChipBorderBrush"] = StyleBrush(ChipBorder);
             app.Resources["HoverOverlayBrush"] = StyleBrush(HoverOverlay);
+            app.Resources["HoverBorderBrush"] = StyleBrush(HoverBorder);
             app.Resources["HoverOverlayStrongBrush"] = StyleBrush(HoverOverlayStrong);
             app.Resources["TooltipBrush"] = StyleBrush(TooltipBrush);
             app.Resources["ThumbBrush"] = StyleBrush(ThumbBrush);
@@ -365,24 +410,115 @@ namespace DiscordPresence
 
         public static Border Card(UIElement content)
         {
-            return new Border
+            Border card = new Border
             {
                 Background = CardBrush,
                 BorderBrush = CardBorder,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(16),
                 Padding = new Thickness(18, 16, 18, 18),
-                Child = content,
-                Effect = new DropShadowEffect
-                {
-                    Color = Colors.Black,
-                    BlurRadius = 18,
-                    ShadowDepth = 3,
-                    Direction = 270,
-                    Opacity = 0.28,
-                    RenderingBias = RenderingBias.Performance
-                }
+                Child = content
             };
+            Elevate(card, new DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 18,
+                ShadowDepth = 3,
+                Direction = 270,
+                Opacity = 0.28,
+                RenderingBias = RenderingBias.Performance
+            });
+            return card;
+        }
+
+        private sealed class ElevatedElement
+        {
+            public FrameworkElement Element;
+            public Effect Shadow;
+        }
+
+        // Blur effects are the most expensive visuals in this app, so every one
+        // of them is registered here. Performance mode drops them at runtime.
+        private static readonly List<ElevatedElement> Elevated = new List<ElevatedElement>();
+        private static bool _performanceMode;
+
+        public static bool PerformanceMode
+        {
+            get { return _performanceMode; }
+        }
+
+        /// <summary>Attaches a soft shadow that Performance mode can drop later.</summary>
+        public static void Elevate(FrameworkElement element, Effect shadow)
+        {
+            if (element == null)
+            {
+                return;
+            }
+            Elevated.Add(new ElevatedElement { Element = element, Shadow = shadow });
+            element.Effect = _performanceMode ? null : shadow;
+        }
+
+        public static void SetPerformanceMode(bool enabled)
+        {
+            _performanceMode = enabled;
+            foreach (ElevatedElement entry in Elevated)
+            {
+                entry.Element.Effect = enabled ? null : entry.Shadow;
+            }
+        }
+
+        /// <summary>The small accent-tinted BETA marker used by preview features.</summary>
+        public static Border BetaChip()
+        {
+            return new Border
+            {
+                Background = AccentSoft,
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(6, 1, 6, 1),
+                Margin = new Thickness(7, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = Text("BETA", 8.5, FontWeights.Bold, Accent),
+                ToolTip = "Preview feature: behaviour can still change in a later release."
+            };
+        }
+
+        /// <summary>
+        /// A header control shaped like Discord's connection status: a rounded
+        /// surface holding an emoji and a short label.
+        /// </summary>
+        public static Button Pill(UIElement glyph, string label, string tooltip, out TextBlock labelText)
+        {
+            StackPanel row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            if (glyph != null)
+            {
+                row.Children.Add(glyph);
+            }
+            labelText = Text(label, 11.5, FontWeights.SemiBold, TextSecondary);
+            labelText.Margin = new Thickness(6, 0, 0, 0);
+            row.Children.Add(labelText);
+
+            Button button = new Button
+            {
+                Style = FindStyle("PillButton"),
+                Content = row,
+                Height = 28,
+                Padding = new Thickness(11, 0, 12, 0),
+                Margin = new Thickness(0, 0, 6, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = tooltip
+            };
+            AutomationProperties.SetName(button, label);
+            return button;
+        }
+
+        public static Button Pill(UIElement glyph, string label, string tooltip)
+        {
+            TextBlock ignored;
+            return Pill(glyph, label, tooltip, out ignored);
         }
 
         public static StackPanel VStack(double gap, params UIElement[] children)

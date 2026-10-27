@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace DiscordPresence
 {
@@ -38,6 +39,9 @@ namespace DiscordPresence
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
 
         private readonly TextBlock _kindText;
+        private readonly TextBlock _elapsedText;
+        private readonly DispatcherTimer _elapsedTimer;
+        private long _elapsedStartMs;
         private readonly TextBlock _nameText;
         private readonly TextBlock _detailsText;
         private readonly TextBlock _stateText;
@@ -65,9 +69,23 @@ namespace DiscordPresence
 
             StackPanel content = new StackPanel();
 
+            // Discord prints the elapsed counter at the top right of the card.
+            Grid heading = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
             _kindText = Theme.Text("PLAYING A GAME", 10, FontWeights.Bold, HeadingBrush);
-            _kindText.Margin = new Thickness(0, 0, 0, 8);
-            content.Children.Add(_kindText);
+            heading.Children.Add(_kindText);
+
+            _elapsedText = Theme.Text(string.Empty, 10, FontWeights.Bold, HeadingBrush);
+            _elapsedText.HorizontalAlignment = HorizontalAlignment.Right;
+            _elapsedText.Visibility = Visibility.Collapsed;
+            Grid.SetColumn(_elapsedText, 1);
+            heading.Children.Add(_elapsedText);
+            content.Children.Add(heading);
+
+            _elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _elapsedTimer.Tick += delegate { PaintElapsed(); };
 
             Grid row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -147,9 +165,10 @@ namespace DiscordPresence
         /// <summary>Replaces the visible card with the current editor values.</summary>
         public void Update(ActivityKind kind, string applicationId, string gameName, string details,
             string state, string streamUrl, string largeImage, string largeText,
-            string smallImage, string smallText, List<PreviewButton> buttons)
+            string smallImage, string smallText, List<PreviewButton> buttons, long elapsedStartMs)
         {
             _kindText.Text = KindLabel(kind);
+            SetElapsed(elapsedStartMs);
 
             string name = Trim(gameName);
             _nameText.Text = name.Length > 0 ? name : "Your game name";
@@ -198,6 +217,41 @@ namespace DiscordPresence
                 _buttons.Children.Add(CreateButton(button));
             }
             _buttons.Visibility = shown.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// Shows Discord's elapsed counter. Zero means the timer is off, which
+        /// hides the text and stops the one-second repaint.
+        /// </summary>
+        private void SetElapsed(long startMs)
+        {
+            _elapsedStartMs = startMs;
+            if (startMs <= 0)
+            {
+                _elapsedText.Visibility = Visibility.Collapsed;
+                _elapsedTimer.Stop();
+                return;
+            }
+            PaintElapsed();
+            if (!_elapsedTimer.IsEnabled)
+            {
+                _elapsedTimer.Start();
+            }
+        }
+
+        private void PaintElapsed()
+        {
+            if (_elapsedStartMs <= 0 || !IsVisible)
+            {
+                return;
+            }
+            long seconds = Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - _elapsedStartMs) / 1000);
+            long hours = seconds / 3600;
+            long minutes = (seconds % 3600) / 60;
+            _elapsedText.Text = hours > 0
+                ? string.Format("{0}:{1:00}:{2:00} elapsed", hours, minutes, seconds % 60)
+                : string.Format("{0:00}:{1:00} elapsed", minutes, seconds % 60);
+            _elapsedText.Visibility = Visibility.Visible;
         }
 
         private void AddButtonIfValid(List<PreviewButton> shown, PreviewButton button)

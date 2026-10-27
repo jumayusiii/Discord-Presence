@@ -129,14 +129,14 @@ namespace DiscordPresence
             MaxWidth = 620;
             Opacity = 0;
             IsHitTestVisible = false;
-            Effect = new DropShadowEffect
+            Theme.Elevate(this, new DropShadowEffect
             {
                 Color = Colors.Black,
                 BlurRadius = 20,
                 ShadowDepth = 4,
                 Direction = 270,
                 Opacity = 0.4
-            };
+            });
             _shift = new TranslateTransform(0, 10);
             RenderTransform = _shift;
 
@@ -414,7 +414,7 @@ namespace DiscordPresence
 
         public event EventHandler Toggled;
 
-        public ToggleRow(string glyph, string title, string description)
+        public ToggleRow(string glyph, string title, string description, bool beta = false)
         {
             CornerRadius = new CornerRadius(10);
             BorderThickness = new Thickness(1);
@@ -433,7 +433,13 @@ namespace DiscordPresence
             grid.Children.Add(_icon);
 
             StackPanel text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            text.Children.Add(Theme.Text(title, 12.5, FontWeights.SemiBold, Theme.TextPrimary));
+            StackPanel heading = new StackPanel { Orientation = Orientation.Horizontal };
+            heading.Children.Add(Theme.Text(title, 12.5, FontWeights.SemiBold, Theme.TextPrimary));
+            if (beta)
+            {
+                heading.Children.Add(Theme.BetaChip());
+            }
+            text.Children.Add(heading);
             TextBlock caption = Theme.Text(description, 11, FontWeights.Normal, Theme.TextMuted);
             caption.TextWrapping = TextWrapping.Wrap;
             caption.TextTrimming = TextTrimming.None;

@@ -12,13 +12,16 @@ notched into their outlines, so each label and input reads as one control.
 ## Features
 
 - Activity types: **Playing**, **Streaming**, **Listening**, and **Watching**
+- **PlayStation** platform mode (BETA): recreates Discord's console game card
+  with a console header, a PS mark, an inline running clock and a Trending state
 - Custom game/activity name, **Details**, and **State**
 - Large and small artwork from a direct `https` image URL or an uploaded asset key
 - Hover text for both images
 - Up to two Rich Presence buttons
 - **Live preview** of the activity card beside the editor, including the
   artwork and the buttons other people see
-- Named presets to save and switch between different games and setups
+- Named presets to save and switch between different games and setups,
+  including a **Rocket League (PlayStation)** example added on first launch
 - Optional **auto-update** mode that republishes while you edit, switch the
   activity type, or load a preset, and brings the saved presence back on launch
 - Short startup animation: the Discord logo fades in and out, then a welcome
@@ -39,9 +42,12 @@ notched into their outlines, so each label and input reads as one control.
 - Emoji glyphs on the four activity-type chips
 - **Changelog** board in the header, with a Discord-style count badge for
   unseen releases
-- **Beta** features in their own Settings section, each with a BETA badge:
+- **Beta** features in Settings, each with a BETA badge:
   a performance mode, an elapsed timer, a summon hotkey, idle pause,
   remembered window geometry and a start-with-Windows switch
+- A **PlayStation** platform mode (BETA) above the Details fields, with its own
+  live card layout
+- **Beta** build marking in the title bar, the About section and the release
 - Rounded window corners
 - Automatic reconnect after Discord restarts
 - **Clear** action to remove the presence
@@ -76,7 +82,8 @@ The **Presets** bar above the editor keeps a library of setups:
 Presets live in the same portable `discord-presence.json` as the rest of the
 settings. The Discord **Application ID** is connection-wide and is not stored in
 a preset, so switching presets never changes the application your presence is
-published through.
+published through. A preset also remembers whether it uses the desktop or the
+PlayStation card.
 
 ![Saving a preset](assets/preset-dialog.png)
 
@@ -87,6 +94,35 @@ activity card, artwork, hover text, and buttons from the current values as you
 type, so the card matches what other people see on your Discord profile before
 you publish. The dark Discord card stays dark in both appearance modes, just
 like the real popout. Discord itself never shows the buttons on your own card.
+
+## PlayStation mode (BETA)
+
+The **Platform** row in the Activity card has two choices:
+
+- **Desktop** is the normal Rich Presence card.
+- **PlayStation** recreates the console card Discord shows for a game detected
+  on a linked console: a `Playing on PlayStation` header with a small PS mark,
+  the game artwork and title, a green running clock under the title, a
+  `Trending` state with a flame, and a full-width button such as
+  **Add to your "Games in Rotation"**.
+
+In PlayStation mode the **Details** field becomes the card header. It is seeded
+with `Playing on PlayStation` when the mode is selected and is published as the
+activity's `details` line. Put the game title in **Game name**, turn on the
+**Elapsed timer** (Beta) for the running clock, and put `🔥 Trending` in
+**State**. The preview draws the flame itself, so the emoji is not duplicated
+there.
+
+A **Rocket League (PlayStation)** preset is added once on first launch with the
+cover art, the console header, the Trending state, and the Games in Rotation
+button. Click its chip in the Presets bar, then **Update presence**.
+
+![PlayStation mode in the editor](assets/playstation.png)
+
+Discord's console card comes from Discord's own console account linking, which a
+Rich Presence app cannot join. The published card therefore carries the
+PlayStation header as its details line; the preview shows the full console
+layout so the target is visible while you design it.
 
 ## Appearance
 
@@ -132,9 +168,10 @@ the theme you built.
 ## Beta features
 
 Six optional features sit together in the **Beta** section of Settings, each
-carrying a BETA badge, and the **Custom theme** switch in the Appearance section
-is marked the same way. They are tested and usable, but their behaviour can
-still change in a later release. All of them are off until you switch them on.
+carrying a BETA badge. The **Custom theme** switch in the Appearance section and
+the **PlayStation** platform choice are marked the same way, and this build is
+itself a **beta**. They are tested and usable, but their behaviour can still
+change in a later release. All of them are off until you switch them on.
 
 ![The beta section, scrolled to the features added in 1.3.0](assets/beta.png)
 
@@ -228,7 +265,7 @@ soon as you pick them.
 Every choice is remembered in the portable settings file and applied on the
 next launch, including the welcome screen. The date after **Built** in the
 About section is stamped into the exe by `build.ps1` at compile time. This
-release is **1.3.0**.
+release is **1.5.0 (beta)**.
 
 ![Settings dialog](assets/settings.png)
 

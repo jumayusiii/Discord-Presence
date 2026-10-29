@@ -34,17 +34,24 @@ namespace DiscordPresence
         private static readonly SolidColorBrush ButtonBrush = Brush(0x4E, 0x50, 0x58);
         private static readonly SolidColorBrush ButtonHoverBrush = Brush(0x5D, 0x60, 0x69);
         private static readonly SolidColorBrush ArrowBrush = Brush(0xB5, 0xBA, 0xC1);
+        private static readonly SolidColorBrush LiveBrush = Brush(0x3B, 0xA5, 0x5D);
 
         private static readonly Dictionary<string, ImageSource> ImageCache =
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
 
         private readonly TextBlock _kindText;
+        private readonly Border _platformMark;
         private readonly TextBlock _elapsedText;
         private readonly DispatcherTimer _elapsedTimer;
         private long _elapsedStartMs;
         private readonly TextBlock _nameText;
         private readonly TextBlock _detailsText;
         private readonly TextBlock _stateText;
+        private readonly StackPanel _liveRow;
+        private readonly StackPanel _liveTime;
+        private readonly TextBlock _liveTimer;
+        private readonly TextBlock _liveFlame;
+        private readonly TextBlock _liveState;
         private readonly Border _largeArt;
         private readonly TextBlock _largeGlyph;
         private readonly Border _smallRing;
@@ -56,6 +63,7 @@ namespace DiscordPresence
         private string _smallArtUrl;
         private int _largeArtVersion;
         private int _smallArtVersion;
+        private bool _playstation;
 
         public PresencePreview()
         {
@@ -75,7 +83,31 @@ namespace DiscordPresence
             heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             _kindText = Theme.Text("PLAYING A GAME", 10, FontWeights.Bold, HeadingBrush);
-            heading.Children.Add(_kindText);
+
+            // Discord prints a small console mark beside the header when the
+            // game was detected on a linked console. The preview mirrors that.
+            TextBlock ps = Theme.Text("PS", 8.5, FontWeights.Bold, HeadingBrush);
+            ps.FontStyle = FontStyles.Italic;
+            _platformMark = new Border
+            {
+                Background = Brush(0x3A, 0x3C, 0x43),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(4, 1, 4, 1),
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = ps,
+                Visibility = Visibility.Collapsed,
+                ToolTip = "PlayStation mode"
+            };
+
+            StackPanel header = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            header.Children.Add(_kindText);
+            header.Children.Add(_platformMark);
+            heading.Children.Add(header);
 
             _elapsedText = Theme.Text(string.Empty, 10, FontWeights.Bold, HeadingBrush);
             _elapsedText.HorizontalAlignment = HorizontalAlignment.Right;
@@ -142,6 +174,40 @@ namespace DiscordPresence
             _nameText.VerticalAlignment = VerticalAlignment.Top;
             lines.Children.Add(_nameText);
 
+            // PlayStation mode prints the running time and the state on one
+            // line under the title, with a green play mark, exactly like the
+            // console card in Discord's Games shelf.
+            _liveRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 3, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+            _liveTime = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            TextBlock play = Theme.Text("\u25B6", 8, FontWeights.Normal, LiveBrush);
+            play.VerticalAlignment = VerticalAlignment.Center;
+            play.Margin = new Thickness(0, 1, 5, 0);
+            _liveTime.Children.Add(play);
+
+            _liveTimer = Theme.Text("0:00", 12, FontWeights.SemiBold, LiveBrush);
+            _liveTimer.VerticalAlignment = VerticalAlignment.Center;
+            _liveTime.Children.Add(_liveTimer);
+            _liveRow.Children.Add(_liveTime);
+
+            _liveFlame = Theme.Emoji("\uD83D\uDD25", 11);
+            _liveFlame.VerticalAlignment = VerticalAlignment.Center;
+            _liveFlame.Margin = new Thickness(12, 0, 5, 0);
+            _liveRow.Children.Add(_liveFlame);
+
+            _liveState = Theme.Text("Trending", 12, FontWeights.Normal, LineBrush);
+            _liveState.VerticalAlignment = VerticalAlignment.Center;
+            _liveRow.Children.Add(_liveState);
+            lines.Children.Add(_liveRow);
+
             _detailsText = Theme.Text(string.Empty, 12, FontWeights.Normal, LineBrush);
             _detailsText.Margin = new Thickness(0, 3, 0, 0);
             _detailsText.Visibility = Visibility.Collapsed;
@@ -163,11 +229,29 @@ namespace DiscordPresence
         }
 
         /// <summary>Replaces the visible card with the current editor values.</summary>
-        public void Update(ActivityKind kind, string applicationId, string gameName, string details,
-            string state, string streamUrl, string largeImage, string largeText,
-            string smallImage, string smallText, List<PreviewButton> buttons, long elapsedStartMs)
+        public void Update(ActivityKind kind, PresencePlatform platform, string applicationId,
+            string gameName, string details, string state, string streamUrl,
+            string largeImage, string largeText, string smallImage, string smallText,
+            List<PreviewButton> buttons, long elapsedStartMs)
         {
-            _kindText.Text = KindLabel(kind);
+            bool playstation = platform == PresencePlatform.PlayStation;
+            _playstation = playstation;
+            string header = Trim(details);
+            if (playstation)
+            {
+                _kindText.Text = header.Length > 0 ? header : "Playing on PlayStation";
+                _platformMark.Visibility = Visibility.Visible;
+                SetLine(_detailsText, string.Empty);
+                SetLine(_stateText, string.Empty);
+            }
+            else
+            {
+                _kindText.Text = KindLabel(kind);
+                _platformMark.Visibility = Visibility.Collapsed;
+                SetLine(_detailsText, details);
+                SetLine(_stateText, state);
+            }
+
             SetElapsed(elapsedStartMs);
 
             string name = Trim(gameName);
@@ -175,8 +259,16 @@ namespace DiscordPresence
             _nameText.Foreground = name.Length > 0 ? NameBrush : MutedBrush;
             _nameText.ToolTip = name.Length > 0 ? name : null;
 
-            SetLine(_detailsText, details);
-            SetLine(_stateText, state);
+            _liveRow.Visibility = playstation ? Visibility.Visible : Visibility.Collapsed;
+            if (playstation)
+            {
+                string live = Trim(state);
+                string liveText = StripFlame(live);
+                _liveState.Text = liveText;
+                _liveState.Visibility = liveText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                _liveFlame.Visibility = liveText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                _liveTime.Visibility = elapsedStartMs > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
 
             string large = ResolveArtUrl(applicationId, largeImage);
             string small = ResolveArtUrl(applicationId, smallImage);
@@ -229,6 +321,7 @@ namespace DiscordPresence
             if (startMs <= 0)
             {
                 _elapsedText.Visibility = Visibility.Collapsed;
+                _liveTime.Visibility = Visibility.Collapsed;
                 _elapsedTimer.Stop();
                 return;
             }
@@ -248,9 +341,21 @@ namespace DiscordPresence
             long seconds = Math.Max(0, (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - _elapsedStartMs) / 1000);
             long hours = seconds / 3600;
             long minutes = (seconds % 3600) / 60;
-            _elapsedText.Text = hours > 0
-                ? string.Format("{0}:{1:00}:{2:00} elapsed", hours, minutes, seconds % 60)
-                : string.Format("{0:00}:{1:00} elapsed", minutes, seconds % 60);
+            string clock = hours > 0
+                ? string.Format("{0}:{1:00}:{2:00}", hours, minutes, seconds % 60)
+                : string.Format("{0:00}:{1:00}", minutes, seconds % 60);
+            _liveTimer.Text = clock;
+
+            if (_playstation)
+            {
+                // The console card puts the running time under the title
+                // instead of in the top-right corner.
+                _elapsedText.Visibility = Visibility.Collapsed;
+                _liveTime.Visibility = Visibility.Visible;
+                return;
+            }
+
+            _elapsedText.Text = clock + " elapsed";
             _elapsedText.Visibility = Visibility.Visible;
         }
 
@@ -559,6 +664,20 @@ namespace DiscordPresence
         private static string Trim(string value)
         {
             return value == null ? string.Empty : value.Trim();
+        }
+
+        /// <summary>
+        /// The PlayStation line draws its own flame, so a leading flame emoji in
+        /// the State field (kept there for Discord itself) is not shown twice.
+        /// </summary>
+        private static string StripFlame(string value)
+        {
+            string text = Trim(value);
+            if (text.StartsWith("\uD83D\uDD25", StringComparison.Ordinal))
+            {
+                text = text.Substring(2);
+            }
+            return text.TrimStart('\uFE0F', ' ');
         }
 
         private static void OpenUrl(string url)

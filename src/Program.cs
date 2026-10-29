@@ -8,9 +8,9 @@ using System.Windows.Threading;
 
 [assembly: AssemblyTitle("Discord Presence")]
 [assembly: AssemblyProduct("Discord Presence")]
-[assembly: AssemblyDescription("A portable Discord Rich Presence editor")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyDescription("A portable Discord Rich Presence editor (Beta)")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace DiscordPresence
 {

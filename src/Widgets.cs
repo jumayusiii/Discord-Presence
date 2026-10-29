@@ -213,6 +213,106 @@ namespace DiscordPresence
         Watching = 3
     }
 
+    /// <summary>
+    /// Where the presence pretends to run. Desktop is the normal Rich Presence
+    /// card; PlayStation recreates Discord's console game card.
+    /// </summary>
+    public enum PresencePlatform
+    {
+        Desktop = 0,
+        PlayStation = 1
+    }
+
+    /// <summary>Selectable platform pill used by the PlayStation (BETA) mode.</summary>
+    public sealed class ChoiceChip : Border
+    {
+        private readonly TextBlock _label;
+        private bool _selected;
+        private bool _hovered;
+
+        public PresencePlatform Platform { get; private set; }
+        public event EventHandler Chosen;
+
+        public ChoiceChip(PresencePlatform platform, string label, string tooltip)
+        {
+            Platform = platform;
+            Height = 34;
+            CornerRadius = new CornerRadius(17);
+            BorderThickness = new Thickness(1);
+            Cursor = Cursors.Hand;
+            Focusable = true;
+            Background = Brushes.Transparent;
+
+            StackPanel row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            if (platform == PresencePlatform.PlayStation)
+            {
+                TextBlock mark = Theme.Text("PS", 9.5, FontWeights.Bold, Theme.TextMuted);
+                mark.Margin = new Thickness(0, 0, 6, 0);
+                mark.FontStyle = FontStyles.Italic;
+                row.Children.Add(mark);
+            }
+            _label = Theme.Text(label, 12.5, FontWeights.SemiBold, Theme.TextSecondary);
+            row.Children.Add(_label);
+            Child = row;
+
+            AutomationProperties.SetName(this, label + " platform");
+            ToolTip = tooltip;
+
+            MouseEnter += delegate { _hovered = true; Paint(); };
+            MouseLeave += delegate { _hovered = false; Paint(); };
+            MouseLeftButtonUp += delegate
+            {
+                if (Chosen != null)
+                {
+                    Chosen(this, EventArgs.Empty);
+                }
+            };
+            KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.Key == Key.Enter || e.Key == Key.Space)
+                {
+                    if (Chosen != null)
+                    {
+                        Chosen(this, EventArgs.Empty);
+                    }
+                    e.Handled = true;
+                }
+            };
+            GotKeyboardFocus += delegate { Paint(); };
+            LostKeyboardFocus += delegate { Paint(); };
+
+            Paint();
+        }
+
+        public void SetSelected(bool selected)
+        {
+            _selected = selected;
+            Paint();
+        }
+
+        private void Paint()
+        {
+            if (_selected)
+            {
+                Background = Theme.SelectedFill;
+                BorderBrush = Theme.Accent;
+                _label.Foreground = Theme.TextPrimary;
+            }
+            else
+            {
+                Background = _hovered ? Theme.HoverOverlay : Brushes.Transparent;
+                BorderBrush = IsKeyboardFocused ? Theme.Accent :
+                    _hovered ? Theme.HoverBorder : Theme.InputBorder;
+                _label.Foreground = Theme.TextSecondary;
+            }
+        }
+    }
+
     /// <summary>Selectable activity-type pill.</summary>
     public sealed class ActivityChip : Border
     {

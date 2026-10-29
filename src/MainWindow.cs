@@ -24,6 +24,7 @@ namespace DiscordPresence
         private readonly AppSettings _settings;
         private readonly object _rpcGate = new object();
         private readonly List<ActivityChip> _chips = new List<ActivityChip>();
+        private readonly List<ChoiceChip> _platformChips = new List<ChoiceChip>();
         private readonly List<PresencePreset> _presets;
 
         private OptionTile _quitTile;
@@ -63,6 +64,7 @@ namespace DiscordPresence
         private FrameworkElement _fadeContent;
 
         private StackPanel _streamBlock;
+        private TextBlock _platformHint;
         private Button _updateButton;
         private Button _clearButton;
         private Snackbar _snackbar;
@@ -127,6 +129,7 @@ namespace DiscordPresence
         private static readonly bool UsesDwmCorners = Environment.OSVersion.Version.Build >= 22000;
 
         private ActivityKind _kind = ActivityKind.Playing;
+        private PresencePlatform _platform = PresencePlatform.Desktop;
         private volatile string _connectedAppId = string.Empty;
         private Dictionary<string, object> _lastPublished;
         private bool _busy;
@@ -141,6 +144,7 @@ namespace DiscordPresence
         {
             _settings = SettingsStore.Load();
             _presets = _settings.Presets ?? new List<PresencePreset>();
+            EnsurePlayStationExample();
             ApplyStoredTheme();
             // The cards and buttons below ask the theme for their shadows, so
             // the performance profile has to be in place before they exist.
@@ -398,6 +402,9 @@ namespace DiscordPresence
             TextBlock title = Theme.Text("Discord Presence", 13.5, FontWeights.SemiBold, Theme.TextPrimary);
             title.Margin = new Thickness(11, 0, 0, 0);
             brand.Children.Add(title);
+            Border beta = Theme.BetaChip();
+            beta.ToolTip = "Beta build: PlayStation mode and the new console card can still change.";
+            brand.Children.Add(beta);
             Grid.SetColumn(brand, 0);
             bar.Children.Add(brand);
 
@@ -1061,6 +1068,7 @@ namespace DiscordPresence
                 _button2Label.SetText(preset.Button2Label);
                 _button2Url.SetText(preset.Button2Url);
                 SelectKind((ActivityKind)preset.ActivityType);
+                SelectPlatform((PresencePlatform)preset.Platform);
             }
             finally
             {
@@ -1972,7 +1980,7 @@ namespace DiscordPresence
         private static string AppVersion()
         {
             Version version = typeof(MainWindow).Assembly.GetName().Version;
-            return version == null ? "1.0.0" : version.ToString(3);
+            return version == null ? "1.5.0 Beta" : version.ToString(3) + " Beta";
         }
 
         private void RefreshSettingsTiles()
@@ -2776,6 +2784,37 @@ namespace DiscordPresence
             Close();
         }
 
+        /// <summary>
+        /// Adds the PlayStation example preset once. It recreates the console
+        /// card from the screenshot so the mode can be tried with one click.
+        /// </summary>
+        private void EnsurePlayStationExample()
+        {
+            if (_settings.PlayStationExampleAdded)
+            {
+                return;
+            }
+            _settings.PlayStationExampleAdded = true;
+            if (FindPresetIndex("Rocket League (PlayStation)") < 0)
+            {
+                _presets.Add(new PresencePreset
+                {
+                    Name = "Rocket League (PlayStation)",
+                    GameName = "Rocket League\u00AE",
+                    ActivityType = (int)ActivityKind.Playing,
+                    Platform = (int)PresencePlatform.PlayStation,
+                    Details = "Playing on PlayStation",
+                    State = "\uD83D\uDD25 Trending",
+                    LargeImage = "https://cdn.cloudflare.steamstatic.com/steam/apps/252950/library_600x900.jpg",
+                    LargeText = "Rocket League\u00AE",
+                    Button1Label = "Add to your \"Games in Rotation\"",
+                    Button1Url = "https://www.rocketleague.com/"
+                });
+            }
+            _settings.Presets = _presets;
+            SettingsStore.Save(_settings);
+        }
+
         private PresencePreset CollectPreset(string name)
         {
             PresencePreset preset = new PresencePreset
@@ -2783,6 +2822,7 @@ namespace DiscordPresence
                 Name = name,
                 GameName = _gameName.Value,
                 ActivityType = (int)_kind,
+                Platform = (int)_platform,
                 Details = _details.Value,
                 State = _state.Value,
                 StreamUrl = _streamUrl.Value,
@@ -2804,6 +2844,7 @@ namespace DiscordPresence
             PresencePreset current = CollectPreset(preset.Name);
             return current.GameName == preset.GameName &&
                 current.ActivityType == preset.ActivityType &&
+                current.Platform == preset.Platform &&
                 current.Details == preset.Details &&
                 current.State == preset.State &&
                 current.StreamUrl == preset.StreamUrl &&
@@ -2987,9 +3028,31 @@ namespace DiscordPresence
             _streamBlock.Children.Add(_streamUrl);
             _streamBlock.Children.Add(streamHint);
 
+            TextBlock platformCaption = Theme.Text("Platform", 11.5, FontWeights.SemiBold, Theme.TextSecondary);
+            platformCaption.Margin = new Thickness(1, 0, 0, 5);
+
+            ChoiceChip desktopChip = BuildPlatformChip(PresencePlatform.Desktop, "Desktop",
+                "The normal Discord Rich Presence card.");
+            ChoiceChip playstationChip = BuildPlatformChip(PresencePlatform.PlayStation, "PlayStation",
+                "Recreates Discord's console game card: console header, inline timer and a Trending state.");
+
+            _platformHint = Theme.Text(
+                "PlayStation mode prints Details as the card header (for example \"Playing on PlayStation\") and moves the running time beside the state.",
+                10.5, FontWeights.Normal, Theme.TextMuted);
+            _platformHint.TextWrapping = TextWrapping.Wrap;
+            _platformHint.TextTrimming = TextTrimming.None;
+            _platformHint.Margin = new Thickness(1, 6, 0, 0);
+            _platformHint.Visibility = Visibility.Collapsed;
+
+            StackPanel platformBlock = new StackPanel();
+            platformBlock.Children.Add(platformCaption);
+            platformBlock.Children.Add(Theme.HStack(8, desktopChip, playstationChip, Theme.BetaChip()));
+            platformBlock.Children.Add(_platformHint);
+
             StackPanel fields = Theme.VStack(12,
                 _gameName,
                 typeBlock,
+                platformBlock,
                 Theme.Row(12, _details, _state),
                 _streamBlock);
 
@@ -2997,6 +3060,19 @@ namespace DiscordPresence
             body.Children.Add(Theme.SectionHeader("Activity", "The core details of your presence."));
             body.Children.Add(fields);
             return Theme.Card(body);
+        }
+
+        private ChoiceChip BuildPlatformChip(PresencePlatform platform, string label, string tooltip)
+        {
+            ChoiceChip chip = new ChoiceChip(platform, label, tooltip);
+            chip.Chosen += delegate
+            {
+                SelectPlatform(platform);
+                ScheduleAutoUpdate();
+                SchedulePreview();
+            };
+            _platformChips.Add(chip);
+            return chip;
         }
 
         private ActivityChip BuildChip(ActivityKind kind, string glyph, string label)
@@ -3153,6 +3229,7 @@ namespace DiscordPresence
             _button2Label.SetText(_settings.Button2Label);
             _button2Url.SetText(_settings.Button2Url);
             SelectKind((ActivityKind)_settings.ActivityType);
+            SelectPlatform((PresencePlatform)_settings.Platform);
             RefreshPreview();
         }
 
@@ -3215,7 +3292,7 @@ namespace DiscordPresence
             AddPreviewButton(buttons, _button1Label.Value, _button1Url.Value);
             AddPreviewButton(buttons, _button2Label.Value, _button2Url.Value);
 
-            _preview.Update(_kind, _applicationId.Value, _gameName.Value, _details.Value, _state.Value,
+            _preview.Update(_kind, _platform, _applicationId.Value, _gameName.Value, _details.Value, _state.Value,
                 _streamUrl.Value, _largeImage.Value, _largeText.Value, _smallImage.Value, _smallText.Value,
                 buttons, _settings.ShowElapsed ? _settings.ElapsedStart : 0);
         }
@@ -3246,6 +3323,37 @@ namespace DiscordPresence
                 chip.SetSelected(chip.Kind == kind);
             }
             _streamBlock.Visibility = kind == ActivityKind.Streaming ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void SelectPlatform(PresencePlatform platform)
+        {
+            _platform = platform;
+            foreach (ChoiceChip chip in _platformChips)
+            {
+                chip.SetSelected(chip.Platform == platform);
+            }
+            if (_platformHint != null)
+            {
+                _platformHint.Visibility = platform == PresencePlatform.PlayStation
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+
+            // PlayStation's header line is its Details field. Seed it with the
+            // exact console wording so the mode is useful straight away.
+            if (platform == PresencePlatform.PlayStation && _details != null &&
+                _details.Value.Length == 0)
+            {
+                _suppressAutoUpdate = true;
+                try
+                {
+                    _details.SetText("Playing on PlayStation");
+                }
+                finally
+                {
+                    _suppressAutoUpdate = false;
+                }
+            }
         }
 
         private void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -3701,6 +3809,10 @@ namespace DiscordPresence
             activity["type"] = _kind == ActivityKind.Streaming ? 0 : (int)_kind;
 
             string details = _details.Value;
+            if (details.Length == 0 && _platform == PresencePlatform.PlayStation)
+            {
+                details = "Playing on PlayStation";
+            }
             if (details.Length > 0)
             {
                 activity["details"] = details;
@@ -3963,6 +4075,7 @@ namespace DiscordPresence
                 ApplicationId = _applicationId.Value,
                 GameName = _gameName.Value,
                 ActivityType = (int)_kind,
+                Platform = (int)_platform,
                 Details = _details.Value,
                 State = _state.Value,
                 StreamUrl = _streamUrl.Value,

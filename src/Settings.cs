@@ -12,6 +12,7 @@ namespace DiscordPresence
         public string Name { get; set; }
         public string GameName { get; set; }
         public int ActivityType { get; set; }
+        public int Platform { get; set; }
         public string Details { get; set; }
         public string State { get; set; }
         public string StreamUrl { get; set; }
@@ -48,6 +49,7 @@ namespace DiscordPresence
                 Name = Name,
                 GameName = GameName,
                 ActivityType = ActivityType,
+                Platform = Platform,
                 Details = Details,
                 State = State,
                 StreamUrl = StreamUrl,
@@ -81,6 +83,10 @@ namespace DiscordPresence
             {
                 ActivityType = 0;
             }
+            if (Platform < 0 || Platform > 1)
+            {
+                Platform = 0;
+            }
         }
 
         private static string Cut(string value, int max)
@@ -100,6 +106,7 @@ namespace DiscordPresence
         public string ApplicationId { get; set; }
         public string GameName { get; set; }
         public int ActivityType { get; set; }
+        public int Platform { get; set; }
         public string Details { get; set; }
         public string State { get; set; }
         public string StreamUrl { get; set; }
@@ -132,6 +139,7 @@ namespace DiscordPresence
         public double WindowHeight { get; set; }
         public long ElapsedStart { get; set; }
         public string LastSeenChangelog { get; set; }
+        public bool PlayStationExampleAdded { get; set; }
 
         public AppSettings()
         {
@@ -162,6 +170,7 @@ namespace DiscordPresence
                 ApplicationId = ApplicationId,
                 GameName = GameName,
                 ActivityType = ActivityType,
+                Platform = Platform,
                 Details = Details,
                 State = State,
                 StreamUrl = StreamUrl,
@@ -192,7 +201,8 @@ namespace DiscordPresence
                 WindowWidth = WindowWidth,
                 WindowHeight = WindowHeight,
                 ElapsedStart = ElapsedStart,
-                LastSeenChangelog = LastSeenChangelog
+                LastSeenChangelog = LastSeenChangelog,
+                PlayStationExampleAdded = PlayStationExampleAdded
             };
             foreach (PresencePreset preset in Presets)
             {
@@ -261,6 +271,10 @@ namespace DiscordPresence
             if (ActivityType < 0 || ActivityType > 3)
             {
                 ActivityType = 0;
+            }
+            if (Platform < 0 || Platform > 1)
+            {
+                Platform = 0;
             }
 
             if (Presets == null)

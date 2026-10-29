@@ -25,6 +25,11 @@ namespace DiscordPresence
     {
         public static readonly ChangelogEntry[] Entries = new[]
         {
+            new ChangelogEntry("1.5.0", "October 29, 2026",
+                "Beta: PlayStation mode \u2014 recreate Discord's console game card with a console header, an inline running time and a Trending state.",
+                "Beta: a Rocket League example preset ships with the app, so the console card from the screenshot is one click away.",
+                "The live preview switches between the desktop card and the PlayStation card, complete with the PS mark and the green play clock.",
+                "This build is marked BETA in the title bar, the About section and on GitHub."),
             new ChangelogEntry("1.4.0", "October 27, 2026",
                 "Appearance moved out of the header and into Settings \u2192 Appearance, as a Dark row and a Light row.",
                 "Beta: Custom theme \u2014 pick your own surface, accent and text colours from a swatch palette, a hex code or one slider per channel.",
